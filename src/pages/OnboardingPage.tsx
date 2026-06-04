@@ -1,4 +1,4 @@
-import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
+import React, { useState, useRef, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Dumbbell, Sparkles, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
