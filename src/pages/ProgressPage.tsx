@@ -1,0 +1,211 @@
+import React, { useEffect, useState } from 'react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { TrendingDown, TrendingUp, Scale, Ruler, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { Card, CardContent, CardHeader } from '../components/ui/Card';
+import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
+
+interface Measurement { measured_at: string; weight_kg: number | null; waist_cm: number | null; }
+interface DayActivity { date: string; completed: number; total: number; pct: number; }
+
+export function ProgressPage() {
+  const { user } = useAuth();
+  const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [activity, setActivity] = useState<DayActivity[]>([]);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    loadData();
+  }, [user, currentMonth]);
+
+  async function loadData() {
+    if (!user) return;
+    setLoading(true);
+
+    const thirtyDaysAgo = subDays(new Date(), 90).toISOString().split('T')[0];
+    const monthStart = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
+    const monthEnd = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
+
+    const [measRes, tasksRes, logsRes] = await Promise.all([
+      supabase.from('body_measurements').select('measured_at, weight_kg, waist_cm').eq('user_id', user.id).gte('measured_at', thirtyDaysAgo).order('measured_at'),
+      supabase.from('daily_tasks').select('task_date, id').eq('user_id', user.id).gte('task_date', monthStart).lte('task_date', monthEnd),
+      supabase.from('task_logs').select('log_date, completed').eq('user_id', user.id).gte('log_date', monthStart).lte('log_date', monthEnd),
+    ]);
+
+    setMeasurements((measRes.data ?? []) as Measurement[]);
+
+    // Build calendar data
+    const tasksByDate = new Map<string, number>();
+    for (const t of tasksRes.data ?? []) {
+      tasksByDate.set(t.task_date, (tasksByDate.get(t.task_date) ?? 0) + 1);
+    }
+    const completedByDate = new Map<string, number>();
+    for (const l of logsRes.data ?? []) {
+      if (l.completed) completedByDate.set(l.log_date, (completedByDate.get(l.log_date) ?? 0) + 1);
+    }
+
+    const days = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
+    const activityData = days.map(d => {
+      const key = format(d, 'yyyy-MM-dd');
+      const total = tasksByDate.get(key) ?? 0;
+      const completed = completedByDate.get(key) ?? 0;
+      return { date: key, completed, total, pct: total > 0 ? Math.round((completed / total) * 100) : 0 };
+    });
+    setActivity(activityData);
+    setLoading(false);
+  }
+
+  const latestWeight = measurements.filter(m => m.weight_kg).pop();
+  const firstWeight = measurements.find(m => m.weight_kg);
+  const weightChange = latestWeight?.weight_kg && firstWeight?.weight_kg
+    ? Math.round((latestWeight.weight_kg - firstWeight.weight_kg) * 10) / 10
+    : null;
+
+  const weeklyActivity = Array.from({ length: 12 }, (_, i) => {
+    const weekStart = subDays(new Date(), (11 - i) * 7 + 7);
+    const weekEnd = subDays(new Date(), (11 - i) * 7);
+    const weekDays = activity.filter(d => {
+      const date = parseISO(d.date);
+      return date >= weekStart && date <= weekEnd;
+    });
+    const avg = weekDays.length > 0 ? Math.round(weekDays.reduce((s, d) => s + d.pct, 0) / weekDays.length) : 0;
+    return { week: `W${i + 1}`, completion: avg };
+  });
+
+  const daysInMonth = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-5 pb-24 lg:pb-8">
+      <h1 className="text-xl font-bold text-white">Progress</h1>
+
+      {/* Weight / waist summary */}
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Scale className="w-4 h-4 text-emerald-400" />
+            <p className="text-xs text-gray-500">Current weight</p>
+          </div>
+          <p className="text-2xl font-bold text-white">{latestWeight?.weight_kg ?? '—'}<span className="text-sm text-gray-500 ml-1">kg</span></p>
+          {weightChange !== null && (
+            <p className={`text-xs mt-1 flex items-center gap-1 ${weightChange < 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {weightChange < 0 ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+              {weightChange > 0 ? '+' : ''}{weightChange} kg since start
+            </p>
+          )}
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Ruler className="w-4 h-4 text-blue-400" />
+            <p className="text-xs text-gray-500">Latest waist</p>
+          </div>
+          <p className="text-2xl font-bold text-white">
+            {measurements.filter(m => m.waist_cm).pop()?.waist_cm ?? '—'}
+            <span className="text-sm text-gray-500 ml-1">cm</span>
+          </p>
+        </Card>
+      </div>
+
+      {/* Weight trend chart */}
+      {measurements.filter(m => m.weight_kg).length > 1 && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold text-white">Weight trend (90 days)</h2>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={measurements.filter(m => m.weight_kg).map(m => ({ date: format(parseISO(m.measured_at), 'MMM d'), weight: m.weight_kg }))}>
+                <defs>
+                  <linearGradient id="weightGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#fff' }} />
+                <Area type="monotone" dataKey="weight" stroke="#10b981" fill="url(#weightGrad)" strokeWidth={2} dot={{ fill: '#10b981', r: 3 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Weekly completion chart */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-white">Weekly completion rate</h2>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={weeklyActivity}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+              <XAxis dataKey="week" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
+              <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#fff' }} formatter={(v: number) => [`${v}%`, 'Completion']} />
+              <Bar dataKey="completion" fill="#10b981" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Activity heatmap calendar */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-400" />
+              <h2 className="text-sm font-semibold text-white">{format(currentMonth, 'MMMM yyyy')}</h2>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setCurrentMonth(d => subDays(startOfMonth(d), 1))} className="p-1 hover:bg-gray-800 rounded-lg transition-colors">
+                <ChevronLeft className="w-4 h-4 text-gray-400" />
+              </button>
+              <button onClick={() => setCurrentMonth(d => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; })} className="p-1 hover:bg-gray-800 rounded-lg transition-colors">
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-7 gap-1 mb-2">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+              <p key={i} className="text-xs text-gray-600 text-center font-medium">{d}</p>
+            ))}
+          </div>
+          {/* Padding for first week */}
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: daysInMonth[0].getDay() }, (_, i) => (
+              <div key={`pad-${i}`} />
+            ))}
+            {activity.map(day => {
+              const date = parseISO(day.date);
+              const isToday = format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+              const color = day.total === 0 ? 'bg-gray-800' :
+                day.pct >= 80 ? 'bg-emerald-500' :
+                day.pct >= 50 ? 'bg-amber-500' : 'bg-red-500/60';
+              return (
+                <div
+                  key={day.date}
+                  title={`${format(date, 'MMM d')}: ${day.completed}/${day.total} tasks`}
+                  className={`aspect-square rounded-md ${color} ${isToday ? 'ring-2 ring-white ring-offset-1 ring-offset-gray-900' : ''} flex items-center justify-center`}
+                >
+                  <span className="text-xs text-white/60 font-medium">{format(date, 'd')}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 mt-3 text-xs text-gray-500">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> 80%+</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> 50-79%</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/60 inline-block" /> &lt;50%</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-800 inline-block" /> No data</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
