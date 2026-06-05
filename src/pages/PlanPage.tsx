@@ -11,15 +11,24 @@ export function PlanPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [planData, setPlanData] = useState<PlanData | null>(null);
+  const [planMeta, setPlanMeta] = useState<{ generated_at: string; last_regenerated_at: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['workout', 'meal']));
   const [regenLoading, setRegenLoading] = useState(false);
   const [regenError, setRegenError] = useState('');
+  const [regenCooldownDays, setRegenCooldownDays] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('plans').select('plan_data').eq('user_id', user.id).eq('is_active', true).order('generated_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => {
-      if (data) setPlanData(data.plan_data as unknown as PlanData);
+    supabase.from('plans').select('plan_data, generated_at, last_regenerated_at').eq('user_id', user.id).eq('is_active', true).order('generated_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => {
+      if (data) {
+        setPlanData(data.plan_data as unknown as PlanData);
+        setPlanMeta({ generated_at: data.generated_at, last_regenerated_at: data.last_regenerated_at });
+        // Calculate cooldown
+        const lastRegen = data.last_regenerated_at ? new Date(data.last_regenerated_at) : new Date(data.generated_at);
+        const daysSince = (Date.now() - lastRegen.getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSince < 30) setRegenCooldownDays(Math.ceil(30 - daysSince));
+      }
       setLoading(false);
     });
   }, [user]);
@@ -34,6 +43,10 @@ export function PlanPage() {
 
   async function regenerate() {
     if (!user) return;
+    if (regenCooldownDays !== null && regenCooldownDays > 0) {
+      setRegenError(`You can regenerate your plan in ${regenCooldownDays} days.`);
+      return;
+    }
     setRegenLoading(true);
     setRegenError('');
     const { data: { session } } = await supabase.auth.getSession();
@@ -51,6 +64,8 @@ export function PlanPage() {
       setRegenError(result.error || 'Failed to regenerate');
     } else {
       setPlanData(result.plan.plan_data as unknown as PlanData);
+      setRegenCooldownDays(30);
+      setRegenError('');
     }
     setRegenLoading(false);
   }
@@ -132,7 +147,7 @@ export function PlanPage() {
                 return (
                   <div key={day} className={`text-center py-2 rounded-xl ${isRest ? 'bg-gray-800/50' : 'bg-emerald-500/10 border border-emerald-500/20'}`}>
                     <p className="text-xs text-gray-500">{dayLabels[day]}</p>
-                    <p className="text-xs mt-1">{isRest ? '💤' : '💪'}</p>
+                    <p className="text-xs mt-1">{isRest ? 'Rest' : 'Workout'}</p>
                   </div>
                 );
               })}
@@ -201,7 +216,7 @@ export function PlanPage() {
                 <ul className="space-y-0.5">
                   {meal.items.map((item, i) => (
                     <li key={i} className="text-xs text-gray-400 flex items-start gap-1.5">
-                      <span className="text-emerald-500 mt-0.5">•</span>{item}
+                      <span className="text-emerald-500 mt-0.5">&#8226;</span>{item}
                     </li>
                   ))}
                 </ul>
@@ -232,7 +247,7 @@ export function PlanPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
                     <p className="text-sm font-medium text-white">{s.name}</p>
-                    <p className="text-xs text-amber-400/80 mt-0.5">{s.dosage} · {s.timing}</p>
+                    <p className="text-xs text-amber-400/80 mt-0.5">{s.dosage} - {s.timing}</p>
                     <p className="text-xs text-gray-500 mt-1">{s.reason}</p>
                     {s.indian_brand && <p className="text-xs text-gray-600 mt-1">Brand: {s.indian_brand}</p>}
                   </div>
@@ -309,7 +324,7 @@ export function PlanPage() {
             <ul className="space-y-2">
               {planData.sleep_protocol.tips.map((tip, i) => (
                 <li key={i} className="text-xs text-gray-400 flex items-start gap-1.5">
-                  <span className="text-violet-400 mt-0.5 flex-shrink-0">•</span>{tip}
+                  <span className="text-violet-400 mt-0.5 flex-shrink-0">&#8226;</span>{tip}
                 </li>
               ))}
             </ul>
@@ -319,9 +334,19 @@ export function PlanPage() {
 
       {/* Regenerate */}
       <div className="border border-gray-800 rounded-2xl p-4">
-        <p className="text-xs text-gray-500 mb-3">Plan not working for you? You can regenerate once every 30 days.</p>
+        <p className="text-xs text-gray-500 mb-3">
+          {regenCooldownDays !== null && regenCooldownDays > 0
+            ? `You can regenerate your plan in ${regenCooldownDays} days.`
+            : 'Plan not working for you? You can regenerate once every 30 days.'}
+        </p>
         {regenError && <p className="text-xs text-red-400 mb-2">{regenError}</p>}
-        <Button variant="secondary" size="sm" onClick={regenerate} loading={regenLoading}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={regenerate}
+          loading={regenLoading}
+          disabled={regenCooldownDays !== null && regenCooldownDays > 0}
+        >
           <RefreshCw className="w-3.5 h-3.5" />
           Regenerate plan
         </Button>

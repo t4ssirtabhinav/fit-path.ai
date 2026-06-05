@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { TrendingDown, TrendingUp, Scale, Ruler, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { TrendingDown, TrendingUp, Scale, Ruler, Calendar, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
-import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
+import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, addDays } from 'date-fns';
+import type { DailyLog } from '../types';
 
 interface Measurement { measured_at: string; weight_kg: number | null; waist_cm: number | null; }
 interface DayActivity { date: string; completed: number; total: number; pct: number; }
@@ -16,10 +17,22 @@ export function ProgressPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
 
+  // Historical date view
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [dateLog, setDateLog] = useState<DailyLog | null>(null);
+  const [dateTasks, setDateTasks] = useState<{ category: string; title: string; completed: boolean }[]>([]);
+
+  const isToday = selectedDate === format(new Date(), 'yyyy-MM-dd');
+
   useEffect(() => {
     if (!user) return;
     loadData();
   }, [user, currentMonth]);
+
+  useEffect(() => {
+    if (!user) return;
+    loadDateData();
+  }, [user, selectedDate]);
 
   async function loadData() {
     if (!user) return;
@@ -37,7 +50,6 @@ export function ProgressPage() {
 
     setMeasurements((measRes.data ?? []) as Measurement[]);
 
-    // Build calendar data
     const tasksByDate = new Map<string, number>();
     for (const t of tasksRes.data ?? []) {
       tasksByDate.set(t.task_date, (tasksByDate.get(t.task_date) ?? 0) + 1);
@@ -58,6 +70,27 @@ export function ProgressPage() {
     setLoading(false);
   }
 
+  async function loadDateData() {
+    if (!user) return;
+    const [logRes, tasksRes] = await Promise.all([
+      supabase.from('daily_logs').select('*').eq('user_id', user.id).eq('log_date', selectedDate).maybeSingle(),
+      supabase.from('daily_tasks').select('id, category, title').eq('user_id', user.id).eq('task_date', selectedDate),
+    ]);
+    setDateLog(logRes.data);
+
+    if (tasksRes.data && tasksRes.data.length > 0) {
+      const logsRes = await supabase.from('task_logs').select('task_id, completed').eq('user_id', user.id).eq('log_date', selectedDate);
+      const logMap = new Map((logsRes.data ?? []).map(l => [l.task_id, l.completed]));
+      setDateTasks((tasksRes.data ?? []).map(t => ({
+        category: t.category,
+        title: t.title,
+        completed: logMap.get(t.id) ?? false,
+      })));
+    } else {
+      setDateTasks([]);
+    }
+  }
+
   const latestWeight = measurements.filter(m => m.weight_kg).pop();
   const firstWeight = measurements.find(m => m.weight_kg);
   const weightChange = latestWeight?.weight_kg && firstWeight?.weight_kg
@@ -76,6 +109,17 @@ export function ProgressPage() {
   });
 
   const daysInMonth = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
+
+  const logSections = dateLog ? [
+    { label: 'Workout', value: dateLog.workout_comments },
+    { label: 'Energy level', value: dateLog.energy_level ? `${dateLog.energy_level}/5` : null },
+    { label: 'Meals', value: dateLog.meal_comments },
+    { label: 'Supplements', value: dateLog.supplement_comments },
+    { label: 'Illness / pain', value: dateLog.illness_comments },
+    { label: 'Sleep', value: dateLog.sleep_comments },
+    { label: 'Vitals', value: dateLog.vitals_comments },
+    { label: 'Other', value: dateLog.other_comments },
+  ].filter(s => s.value) : [];
 
   return (
     <div className="max-w-2xl mx-auto space-y-5 pb-24 lg:pb-8">
@@ -176,25 +220,26 @@ export function ProgressPage() {
               <p key={i} className="text-xs text-gray-600 text-center font-medium">{d}</p>
             ))}
           </div>
-          {/* Padding for first week */}
           <div className="grid grid-cols-7 gap-1">
             {Array.from({ length: daysInMonth[0].getDay() }, (_, i) => (
               <div key={`pad-${i}`} />
             ))}
             {activity.map(day => {
               const date = parseISO(day.date);
-              const isToday = format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+              const isSelected = day.date === selectedDate;
+              const isCurrentDay = day.date === format(new Date(), 'yyyy-MM-dd');
               const color = day.total === 0 ? 'bg-gray-800' :
                 day.pct >= 80 ? 'bg-emerald-500' :
                 day.pct >= 50 ? 'bg-amber-500' : 'bg-red-500/60';
               return (
-                <div
+                <button
                   key={day.date}
+                  onClick={() => setSelectedDate(day.date)}
                   title={`${format(date, 'MMM d')}: ${day.completed}/${day.total} tasks`}
-                  className={`aspect-square rounded-md ${color} ${isToday ? 'ring-2 ring-white ring-offset-1 ring-offset-gray-900' : ''} flex items-center justify-center`}
+                  className={`aspect-square rounded-md ${color} ${isSelected ? 'ring-2 ring-white ring-offset-1 ring-offset-gray-900' : isCurrentDay ? 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-gray-900' : ''} flex items-center justify-center hover:opacity-80 transition-opacity`}
                 >
                   <span className="text-xs text-white/60 font-medium">{format(date, 'd')}</span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -204,6 +249,74 @@ export function ProgressPage() {
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/60 inline-block" /> &lt;50%</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-800 inline-block" /> No data</span>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Historical date view */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-400" />
+              <h2 className="text-sm font-semibold text-white">
+                {isToday ? 'Today' : format(parseISO(selectedDate), 'EEEE, MMM d')}
+              </h2>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setSelectedDate(format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd'))}
+                className="p-1 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4 text-gray-400" />
+              </button>
+              <button
+                onClick={() => setSelectedDate(format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd'))}
+                disabled={isToday}
+                className="p-1 hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-30"
+              >
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-3">
+          {/* Task checkins */}
+          {dateTasks.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Task check-ins</p>
+              <div className="space-y-1.5">
+                {dateTasks.map((task, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center ${task.completed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-800 text-gray-600'}`}>
+                      {task.completed ? '✓' : '○'}
+                    </span>
+                    <span className={task.completed ? 'text-gray-400 line-through' : 'text-gray-500'}>{task.title}</span>
+                    <span className="ml-auto text-gray-600 capitalize">{task.category}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-600">No tasks logged for this day</p>
+          )}
+
+          {/* Daily log comments */}
+          {logSections.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <MessageSquare className="w-3 h-3" />
+                Logged notes
+              </p>
+              <div className="space-y-2">
+                {logSections.map((s, i) => (
+                  <div key={i} className="bg-gray-800/50 rounded-xl p-3">
+                    <p className="text-xs text-gray-500 mb-0.5">{s.label}</p>
+                    <p className="text-sm text-gray-300">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

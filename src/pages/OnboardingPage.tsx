@@ -83,6 +83,7 @@ const emptyData: OnboardingData & { allergies: string[] } = {
   goal_timeline_months: 6,
   medications: '',
   allergies: [],
+  personalization_comments: '',
 };
 
 function ProgressBar({ step }: { step: number }) {
@@ -168,6 +169,9 @@ function TagInput({
     if (inputValue.trim()) addTag(inputValue);
   }
 
+  // Render tags from the data state directly so they survive navigation
+  const displayTags = tags;
+
   return (
     <div>
       <label className="text-sm font-medium text-gray-300 block mb-1.5">{label}</label>
@@ -208,7 +212,7 @@ export function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [data, setData] = useState<OnboardingData & { allergies: string[] }>(emptyData);
   const [loading, setLoading] = useState(false);
-  const [prefilling, setPrefilling] = useState(true);
+  const [prefilling, setPrefilling] = useState(profile?.onboarding_complete === true);
   const [error, setError] = useState('');
   const isEdit = profile?.onboarding_complete === true;
 
@@ -241,6 +245,7 @@ export function OnboardingPage() {
           food_dislikes: hp.food_dislikes ?? [],
           goal_timeline_months: hp.goal_timeline_months ?? 6,
           medications: hp.medications ?? '',
+          personalization_comments: hp.personalization_comments ?? '',
         });
       }
       setPrefilling(false);
@@ -307,6 +312,7 @@ export function OnboardingPage() {
         food_preferences: data.food_preferences,
         food_dislikes: data.food_dislikes,
         goal_timeline_months: data.goal_timeline_months,
+        personalization_comments: data.personalization_comments || null,
       }, { onConflict: 'user_id' });
 
       if (hpError) throw hpError;
@@ -674,6 +680,17 @@ export function OnboardingPage() {
                 <p className="text-gray-400 text-sm leading-relaxed">
                   We have everything we need to build your personalised Phase 1 plan covering workouts, diet, supplements, habits, and sleep protocol.
                 </p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-300 block mb-1.5">Anything else for your AI coach? (optional)</label>
+                <textarea
+                  value={data.personalization_comments}
+                  onChange={e => set('personalization_comments', e.target.value)}
+                  placeholder="e.g. I want to focus on home workouts, I can't do pull-ups, I prefer dal over paneer, I wake up at 5am..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[80px] resize-y"
+                />
+                <p className="text-xs text-gray-500 mt-1">This helps the AI personalise your plan further</p>
               </div>
 
               <div className="bg-gray-800/50 rounded-xl p-4 space-y-2 text-sm">

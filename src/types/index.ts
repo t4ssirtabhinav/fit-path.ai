@@ -8,6 +8,8 @@ export type TaskLog = Database['public']['Tables']['task_logs']['Row'];
 export type BodyMeasurement = Database['public']['Tables']['body_measurements']['Row'];
 export type Streak = Database['public']['Tables']['streaks']['Row'];
 export type Buddy = Database['public']['Tables']['buddies']['Row'];
+export type DailyLog = Database['public']['Tables']['daily_logs']['Row'];
+export type Milestone = Database['public']['Tables']['milestones']['Row'];
 
 export type TaskCategory = 'workout' | 'meal' | 'supplement' | 'habit' | 'sleep';
 
@@ -107,6 +109,18 @@ export interface BuddyWithProfile {
   streak: Streak;
 }
 
+export interface BuddyDetail {
+  id: string;
+  name: string;
+  streak: number;
+  longestStreak: number;
+  totalActive: number;
+  missedDays: number;
+  monthlyRate: number;
+  completionPct: number;
+  buddyRelId: string;
+}
+
 export interface OnboardingData {
   display_name: string;
   age: number;
@@ -126,4 +140,5 @@ export interface OnboardingData {
   food_dislikes: string[];
   goal_timeline_months: number;
   medications: string;
+  personalization_comments: string;
 }

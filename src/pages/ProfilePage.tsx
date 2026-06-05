@@ -1,14 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import type { HealthProfile } from '../types';
 
+interface PlanHistoryItem {
+  id: string;
+  phase: number;
+  is_active: boolean;
+  generated_at: string;
+}
+
 export function ProfilePage() {
   const { user, profile, signOut, refreshProfile } = useAuth();
+  const navigate = useNavigate();
   const [hp, setHp] = useState<HealthProfile | null>(null);
+  const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
   const [savingName, setSavingName] = useState(false);
@@ -19,6 +29,9 @@ export function ProfilePage() {
     if (!user) return;
     supabase.from('health_profiles').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => {
       setHp(data);
+    });
+    supabase.from('plans').select('id, phase, is_active, generated_at').eq('user_id', user.id).order('generated_at', { ascending: false }).then(({ data }) => {
+      setPlanHistory(data ?? []);
     });
   }, [user]);
 
@@ -132,7 +145,7 @@ export function ProfilePage() {
                 <h2 className="text-sm font-semibold text-white">Health Profile</h2>
               </div>
               <button
-                onClick={() => window.location.href = '/onboarding'}
+                onClick={() => navigate('/onboarding')}
                 className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
               >
                 Update <ChevronRight className="w-3 h-3" />
@@ -160,6 +173,33 @@ export function ProfilePage() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Plan History */}
+      {planHistory.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-gray-400" />
+              <h2 className="text-sm font-semibold text-white">Plan History</h2>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              {planHistory.map(plan => (
+                <div key={plan.id} className="flex items-center justify-between py-1.5 border-b border-gray-800 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${plan.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-800 text-gray-500'}`}>
+                      {plan.is_active ? 'Active' : 'Archived'}
+                    </span>
+                    <span className="text-sm text-white">Phase {plan.phase}</span>
+                  </div>
+                  <span className="text-xs text-gray-500">{new Date(plan.generated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

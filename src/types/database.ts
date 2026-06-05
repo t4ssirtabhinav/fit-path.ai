@@ -55,6 +55,7 @@ export interface Database {
           food_preferences: string[];
           food_dislikes: string[];
           goal_timeline_months: number | null;
+          personalization_comments: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -78,6 +79,7 @@ export interface Database {
           food_preferences?: string[];
           food_dislikes?: string[];
           goal_timeline_months?: number | null;
+          personalization_comments?: string | null;
         };
         Update: Partial<Database['public']['Tables']['health_profiles']['Insert']>;
       };
@@ -223,6 +225,53 @@ export interface Database {
           status?: 'pending' | 'active' | 'declined';
         };
         Update: Partial<Database['public']['Tables']['buddies']['Insert']>;
+      };
+      daily_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          log_date: string;
+          workout_comments: string | null;
+          energy_level: number | null;
+          meal_comments: string | null;
+          supplement_comments: string | null;
+          illness_comments: string | null;
+          sleep_comments: string | null;
+          vitals_comments: string | null;
+          other_comments: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          log_date: string;
+          workout_comments?: string | null;
+          energy_level?: number | null;
+          meal_comments?: string | null;
+          supplement_comments?: string | null;
+          illness_comments?: string | null;
+          sleep_comments?: string | null;
+          vitals_comments?: string | null;
+          other_comments?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['daily_logs']['Insert']>;
+      };
+      milestones: {
+        Row: {
+          id: string;
+          user_id: string;
+          milestone_key: string;
+          unlocked_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          milestone_key: string;
+          unlocked_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['milestones']['Insert']>;
       };
     };
   };

@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   Flame, Dumbbell, Salad, Pill, CheckCircle2, Circle, Coffee,
-  Moon, Zap, ChevronRight, RefreshCw, BedDouble, Target, TrendingUp, Users
+  Moon, Zap, ChevronRight, RefreshCw, BedDouble, Target, TrendingUp, Users,
+  Info, X, MessageSquare, ChevronLeft
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { today } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
-import type { DailyTask, TaskLog, Streak } from '../types';
+import type { DailyTask, TaskLog, Streak, DailyLog } from '../types';
 
 type TaskWithLog = DailyTask & { log?: TaskLog };
 
@@ -29,6 +30,13 @@ const CATEGORY_COLORS: Record<string, string> = {
   habit: 'text-sky-400 bg-sky-400/10',
   sleep: 'text-violet-400 bg-violet-400/10',
 };
+
+interface BuddyTile {
+  id: string;
+  name: string;
+  streak: number;
+  completionPct: number;
+}
 
 function CompletionRing({ percent }: { percent: number }) {
   const r = 36;
@@ -53,7 +61,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskWithLog[]>([]);
   const [streak, setStreak] = useState<Streak | null>(null);
-  const [buddyData, setBuddyData] = useState<{ name: string; streak: number; completion: number } | null>(null);
+  const [buddies, setBuddies] = useState<BuddyTile[]>([]);
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [restDayLogging, setRestDayLogging] = useState(false);
@@ -61,6 +69,14 @@ export function DashboardPage() {
   const [weight, setWeight] = useState('');
   const [waist, setWaist] = useState('');
   const [savingMeasurement, setSavingMeasurement] = useState(false);
+
+  // Log comments modal
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [dailyLog, setDailyLog] = useState<Partial<DailyLog>>({});
+  const [savingLog, setSavingLog] = useState(false);
+
+  // Info popup for task descriptions
+  const [infoTask, setInfoTask] = useState<TaskWithLog | null>(null);
 
   const todayDate = today();
   const dateLabel = format(new Date(), 'EEEE, MMMM d');
@@ -86,7 +102,7 @@ export function DashboardPage() {
 
     // If no tasks today, try to seed from active plan
     if (enriched.length === 0) {
-      const { data: plan } = await supabase.from('plans').select('id, plan_data').eq('user_id', user.id).eq('is_active', true).maybeSingle();
+      const { data: plan } = await supabase.from('plans').select('id, plan_data').eq('user_id', user.id).eq('is_active', true).order('generated_at', { ascending: false }).limit(1).maybeSingle();
       if (plan) {
         await seedTasksFromPlan(user.id, plan.id, plan.plan_data as Record<string, unknown>);
         const { data: newTasks } = await supabase.from('daily_tasks').select('*').eq('user_id', user.id).eq('task_date', todayDate).order('order_index');
@@ -94,28 +110,35 @@ export function DashboardPage() {
       }
     }
 
-    // Fetch buddy
-    const { data: buddyRel } = await supabase
+    // Load buddy tiles
+    const { data: buddyRels } = await supabase
       .from('buddies')
-      .select('requester_id, recipient_id')
+      .select('id, requester_id, recipient_id')
       .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
-      .eq('status', 'active')
-      .maybeSingle();
+      .eq('status', 'active');
 
-    if (buddyRel) {
-      const buddyId = buddyRel.requester_id === user.id ? buddyRel.recipient_id : buddyRel.requester_id;
-      const [buddyProfile, buddyStreak] = await Promise.all([
-        supabase.from('profiles').select('display_name').eq('id', buddyId).maybeSingle(),
-        supabase.from('streaks').select('current_streak, monthly_completion_rate').eq('user_id', buddyId).maybeSingle(),
+    if (buddyRels && buddyRels.length > 0) {
+      const buddyIds = buddyRels.map(b => b.requester_id === user.id ? b.recipient_id : b.requester_id);
+      const [buddyProfiles, buddyStreaks] = await Promise.all([
+        supabase.from('profiles').select('id, display_name').in('id', buddyIds),
+        supabase.from('streaks').select('user_id, current_streak, monthly_completion_rate').in('user_id', buddyIds),
       ]);
-      if (buddyProfile.data && buddyStreak.data) {
-        setBuddyData({
-          name: buddyProfile.data.display_name,
-          streak: buddyStreak.data.current_streak,
-          completion: Math.round((buddyStreak.data.monthly_completion_rate ?? 0) * 100),
-        });
-      }
+      const streakMap = new Map((buddyStreaks.data ?? []).map(s => [s.user_id, s]));
+      const tiles: BuddyTile[] = (buddyProfiles.data ?? []).map(p => {
+        const s = streakMap.get(p.id);
+        return {
+          id: p.id,
+          name: p.display_name,
+          streak: s?.current_streak ?? 0,
+          completionPct: Math.round((s?.monthly_completion_rate ?? 0) * 100),
+        };
+      });
+      setBuddies(tiles);
     }
+
+    // Load today's daily log
+    const { data: existingLog } = await supabase.from('daily_logs').select('*').eq('user_id', user.id).eq('log_date', todayDate).maybeSingle();
+    if (existingLog) setDailyLog(existingLog);
 
     setLoading(false);
   }, [user, todayDate]);
@@ -201,6 +224,25 @@ export function DashboardPage() {
     setWaist('');
   }
 
+  async function saveDailyLog() {
+    if (!user) return;
+    setSavingLog(true);
+    await supabase.from('daily_logs').upsert({
+      user_id: user.id,
+      log_date: todayDate,
+      workout_comments: dailyLog.workout_comments || null,
+      energy_level: dailyLog.energy_level || null,
+      meal_comments: dailyLog.meal_comments || null,
+      supplement_comments: dailyLog.supplement_comments || null,
+      illness_comments: dailyLog.illness_comments || null,
+      sleep_comments: dailyLog.sleep_comments || null,
+      vitals_comments: dailyLog.vitals_comments || null,
+      other_comments: dailyLog.other_comments || null,
+    }, { onConflict: 'user_id,log_date' });
+    setSavingLog(false);
+    setShowLogModal(false);
+  }
+
   const groupedTasks = tasks.reduce<Record<string, TaskWithLog[]>>((acc, t) => {
     if (!acc[t.category]) acc[t.category] = [];
     acc[t.category].push(t);
@@ -231,13 +273,22 @@ export function DashboardPage() {
             {profile?.display_name?.split(' ')[0] ?? 'there'}
           </h1>
         </div>
-        <button
-          onClick={() => setShowMeasurementModal(true)}
-          className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-400/10 hover:bg-emerald-400/20 px-3 py-1.5 rounded-xl transition-colors"
-        >
-          <Target className="w-3.5 h-3.5" />
-          Log weight
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowLogModal(true)}
+            className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 bg-sky-400/10 hover:bg-sky-400/20 px-3 py-1.5 rounded-xl transition-colors"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            Log notes
+          </button>
+          <button
+            onClick={() => setShowMeasurementModal(true)}
+            className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-400/10 hover:bg-emerald-400/20 px-3 py-1.5 rounded-xl transition-colors"
+          >
+            <Target className="w-3.5 h-3.5" />
+            Log weight
+          </button>
+        </div>
       </div>
 
       {/* Stats row */}
@@ -269,39 +320,45 @@ export function DashboardPage() {
         </Card>
       </div>
 
+      {/* Buddy tiles - horizontal scroll */}
+      {buddies.length > 0 && (
+        <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+          {buddies.map(b => {
+            const isPositive = b.completionPct >= 50;
+            return (
+              <button
+                key={b.id}
+                onClick={() => navigate(`/buddy?buddyId=${b.id}`)}
+                className="flex-shrink-0 flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 hover:border-gray-700 transition-colors"
+              >
+                <div className="relative">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 text-white font-semibold text-sm">
+                    {b.name[0]?.toUpperCase()}
+                  </div>
+                  <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-gray-900 ${isPositive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                </div>
+                <div className="text-left min-w-[80px]">
+                  <p className="text-sm font-medium text-white truncate max-w-[100px]">{b.name}</p>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className={isPositive ? 'text-emerald-400' : 'text-red-400'}>{b.completionPct}%</span>
+                    <span className="text-orange-400 flex items-center gap-0.5"><Flame className="w-3 h-3" />{b.streak}d</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Shame mode banner */}
       {isShameMode && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4">
           <p className="text-red-400 font-bold text-sm">YOU ARE FALLING BEHIND.</p>
           <p className="text-red-300/80 text-xs mt-1">
             Only {completedCount}/{totalCount} tasks done today. Your body doesn't care about excuses. Neither does your future self.
-            {buddyData && ` ${buddyData.name} is at ${buddyData.completion}% this month.`}
+            {buddies.length > 0 && ` ${buddies[0].name} is at ${buddies[0].completionPct}% this month.`}
           </p>
         </div>
-      )}
-
-      {/* Buddy card */}
-      {buddyData && (
-        <Card>
-          <div className="px-5 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gray-700 rounded-full flex items-center justify-center">
-                <Users className="w-4 h-4 text-gray-400" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-white">{buddyData.name}</p>
-                <p className="text-xs text-gray-500">Your buddy</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-sm font-bold text-white flex items-center gap-1 justify-end">
-                <Flame className="w-3.5 h-3.5 text-orange-400" />
-                {buddyData.streak} days
-              </p>
-              <p className="text-xs text-gray-500">{buddyData.completion}% this month</p>
-            </div>
-          </div>
-        </Card>
       )}
 
       {/* Task groups */}
@@ -351,9 +408,17 @@ export function DashboardPage() {
                       {task.title}
                     </p>
                     {task.description && (
-                      <p className="text-xs text-gray-500 mt-0.5 leading-relaxed line-clamp-2">{task.description}</p>
+                      <p className="text-xs text-gray-500 mt-0.5 leading-relaxed line-clamp-1">{task.description}</p>
                     )}
                   </div>
+                  {task.description && task.description.length > 50 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setInfoTask(task); }}
+                      className="flex-shrink-0 mt-0.5 text-gray-600 hover:text-gray-300 transition-colors"
+                    >
+                      <Info className="w-4 h-4" />
+                    </button>
+                  )}
                 </button>
               ))}
             </CardContent>
@@ -379,6 +444,127 @@ export function DashboardPage() {
             View full plan
             <ChevronRight className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Info popup modal */}
+      {infoTask && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setInfoTask(null)}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-white">{infoTask.title}</h3>
+              <button onClick={() => setInfoTask(null)} className="text-gray-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{infoTask.description}</p>
+            <div className="mt-4">
+              <Button variant="secondary" size="sm" onClick={() => setInfoTask(null)} className="w-full">Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Daily Log modal */}
+      {showLogModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Log your notes</h3>
+              <button onClick={() => setShowLogModal(false)} className="text-gray-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Workout comments</label>
+                <textarea
+                  value={dailyLog.workout_comments ?? ''}
+                  onChange={e => setDailyLog(prev => ({ ...prev, workout_comments: e.target.value }))}
+                  placeholder="How did your workout feel?"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Energy level</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map(v => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setDailyLog(prev => ({ ...prev, energy_level: prev.energy_level === v ? null : v }))}
+                      className={`w-10 h-10 rounded-xl text-sm font-bold border transition-all ${
+                        dailyLog.energy_level === v
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                          : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-600 mt-1">1 = exhausted, 5 = energized</p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Meal comments</label>
+                <textarea
+                  value={dailyLog.meal_comments ?? ''}
+                  onChange={e => setDailyLog(prev => ({ ...prev, meal_comments: e.target.value }))}
+                  placeholder="Any observations about meals today?"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Supplement comments</label>
+                <textarea
+                  value={dailyLog.supplement_comments ?? ''}
+                  onChange={e => setDailyLog(prev => ({ ...prev, supplement_comments: e.target.value }))}
+                  placeholder="Did you take all supplements? Any reactions?"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Illness / pain notes</label>
+                <textarea
+                  value={dailyLog.illness_comments ?? ''}
+                  onChange={e => setDailyLog(prev => ({ ...prev, illness_comments: e.target.value }))}
+                  placeholder="Any sickness, pain, or discomfort?"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Sleep comments</label>
+                <textarea
+                  value={dailyLog.sleep_comments ?? ''}
+                  onChange={e => setDailyLog(prev => ({ ...prev, sleep_comments: e.target.value }))}
+                  placeholder="Sleep quality, late night, early wake?"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Vitals</label>
+                <textarea
+                  value={dailyLog.vitals_comments ?? ''}
+                  onChange={e => setDailyLog(prev => ({ ...prev, vitals_comments: e.target.value }))}
+                  placeholder="Blood pressure, heart rate, blood sugar, etc."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Other comments</label>
+                <textarea
+                  value={dailyLog.other_comments ?? ''}
+                  onChange={e => setDailyLog(prev => ({ ...prev, other_comments: e.target.value }))}
+                  placeholder="Anything else you want to note?"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <Button variant="secondary" className="flex-1" onClick={() => setShowLogModal(false)}>Cancel</Button>
+              <Button className="flex-1" onClick={saveDailyLog} loading={savingLog}>Save notes</Button>
+            </div>
+          </div>
         </div>
       )}
 
