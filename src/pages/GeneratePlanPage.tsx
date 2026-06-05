@@ -24,24 +24,37 @@ export function GeneratePlanPage() {
   useEffect(() => {
     if (!user) return;
 
+    // Advance through steps every 3s, then pulse the last one until done
     const interval = setInterval(() => {
-      setCurrentStep(s => Math.min(s + 1, STEPS.length - 1));
-    }, 1800);
+      setCurrentStep(s => (s < STEPS.length - 1 ? s + 1 : s));
+    }, 3000);
 
     async function generate() {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-plan`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session?.access_token}`,
-            'Content-Type': 'application/json',
-            'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({}),
-        }
-      );
+      let res: Response;
+      try {
+        res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-plan`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session?.access_token}`,
+              'Content-Type': 'application/json',
+              'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({}),
+            signal: AbortSignal.timeout(75000),
+          }
+        );
+      } catch (err) {
+        clearInterval(interval);
+        const isTimeout = err instanceof DOMException && err.name === 'TimeoutError';
+        setError(isTimeout
+          ? 'Plan generation timed out. This usually means the AI is under high load — please try again in a moment.'
+          : 'Network error. Please check your connection and try again.'
+        );
+        return;
+      }
       const result = await res.json();
       clearInterval(interval);
       if (!res.ok) {
@@ -80,32 +93,37 @@ export function GeneratePlanPage() {
             <p className="text-gray-400 text-sm mb-8">
               {done
                 ? 'A personalised Phase 1 plan has been created just for you.'
-                : "This takes 10-20 seconds. We're being thorough."}
+                : 'This usually takes 30–60 seconds. Hang tight.'}
             </p>
 
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8 text-left space-y-3">
-              {STEPS.map((step, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
-                    i < currentStep || done
-                      ? 'bg-emerald-500'
-                      : i === currentStep && !done
-                      ? 'border-2 border-emerald-500 animate-pulse'
-                      : 'border-2 border-gray-700'
-                  }`}>
-                    {(i < currentStep || done) && (
-                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
+              {STEPS.map((step, i) => {
+                const isComplete = i < currentStep || done;
+                const isActive = i === currentStep && !done;
+                const isLastAndWaiting = isActive && i === STEPS.length - 1;
+                return (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
+                      isComplete
+                        ? 'bg-emerald-500'
+                        : isActive
+                        ? 'border-2 border-emerald-500 animate-pulse'
+                        : 'border-2 border-gray-700'
+                    }`}>
+                      {isComplete && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className={`text-sm transition-colors duration-300 ${
+                      isComplete || isActive ? 'text-gray-200' : 'text-gray-600'
+                    }`}>
+                      {isLastAndWaiting ? `${step}…` : step}
+                    </span>
                   </div>
-                  <span className={`text-sm transition-colors duration-300 ${
-                    i <= currentStep || done ? 'text-gray-200' : 'text-gray-600'
-                  }`}>
-                    {step}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {done && (

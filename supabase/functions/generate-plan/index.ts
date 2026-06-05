@@ -118,75 +118,48 @@ function buildPrompt(hp: Record<string, unknown>): string {
   const rawComments = (hp.personalization_comments as string) || "";
   const personalizationComments = sanitizeUserInput(rawComments, 500);
 
-  return `You are an expert fitness coach, dietician, and nutritionist specialising in Indian context.
+  return `You are an expert Indian fitness coach and dietician. Create a Phase 1 (Month 1-3) personalised plan for:
 
-Create a detailed Phase 1 (Month 1-3) personalised fitness and nutrition plan for:
-- Name: ${hp.display_name ?? "User"}
-- Age: ${hp.age}, Gender: ${hp.gender}
-- Weight: ${hp.weight_kg}kg, Height: ${hp.height_cm}cm
-- Body type: ${hp.body_type}
-- Activity level: ${hp.activity_level}
-- Diet type: ${hp.diet_type}
-- Goals: ${goals}
-- Health concerns: ${concerns}
-- Injuries/limitations: ${injuries}
-- Sleep currently: ${hp.sleep_hours_current} hours
-- Gym days per week: ${hp.commitment_days_per_week}
-- Preferred workout time: ${hp.preferred_workout_time}
-- Food preferences: ${foodPrefs}
-- Food dislikes: ${(hp.food_dislikes as string[]).join(", ") || "none"}
-- Timeline goal: ${hp.goal_timeline_months} months
-${personalizationComments ? `- Additional user notes for personalization: ${personalizationComments}` : ""}
+Name: ${hp.display_name ?? "User"} | Age: ${hp.age} | Gender: ${hp.gender}
+Weight: ${hp.weight_kg}kg | Height: ${hp.height_cm}cm | Body type: ${hp.body_type}
+Activity: ${hp.activity_level} | Diet: ${hp.diet_type} | Gym days/week: ${hp.commitment_days_per_week}
+Goals: ${goals}
+Health concerns: ${concerns}
+Injuries: ${injuries}
+Food preferences: ${foodPrefs} | Dislikes: ${(hp.food_dislikes as string[]).join(", ") || "none"}
+Sleep: ${hp.sleep_hours_current}h | Preferred workout time: ${hp.preferred_workout_time}
+Timeline: ${hp.goal_timeline_months} months${personalizationComments ? `\nNotes: ${personalizationComments}` : ""}
 
-IMPORTANT CONTEXT:
-- User is India-based. All food suggestions must use Indian ingredients (dal, roti, chaas, paneer, makhana, etc.)
-- Supplement brands should be India-available (AS-IT-IS, Nakpro, MuscleBlaze, Nutrabay, WOW, The Whole Truth)
-- Diet must account for their diet type strictly
-- For sedentary users returning to gym, start gradually at RPE 5-7, focus on form and consistency
-- Include progressive overload principles
-- Address specific health concerns with targeted nutrition
+Rules: Indian ingredients only (dal, roti, paneer, makhana, chaas etc). Indian supplement brands (AS-IT-IS, MuscleBlaze, Nutrabay, WOW). Strict diet type adherence. Gradual progression for sedentary users.
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no explanation, just JSON):
+Return ONLY valid JSON, no markdown, matching this exact schema:
 {
-  "phase": 1,
-  "phase_name": "Foundation",
-  "phase_description": "string (2-3 sentences describing phase focus)",
-  "duration_months": 3,
-  "personalized_notes": "string (3-4 sentences of personalized advice based on their specific profile)",
-  "calorie_target": number,
-  "protein_target_g": number,
+  "phase": 1, "phase_name": "Foundation", "phase_description": "2-3 sentences",
+  "duration_months": 3, "personalized_notes": "3-4 sentences of specific advice",
+  "calorie_target": number, "protein_target_g": number,
   "weekly_schedule": {
-    "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number, "notes": "string optional" }], "notes": "string optional" } },
+    "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number }] } },
     "tuesday": { "is_rest_day": true },
-    "wednesday": { "is_rest_day": false, "workout": { ... same structure } },
+    "wednesday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [...] } },
     "thursday": { "is_rest_day": true },
-    "friday": { "is_rest_day": false, "workout": { ... same structure } },
-    "saturday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [...], "notes": "string optional" } },
+    "friday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [...] } },
+    "saturday": { "is_rest_day": true },
     "sunday": { "is_rest_day": true }
   },
   "daily_meals": {
-    "breakfast": { "title": "string", "items": ["string"], "protein_g": number, "calories": number, "notes": "string optional" },
+    "breakfast": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
     "mid_morning_snack": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
-    "lunch": { "title": "string", "items": ["string"], "protein_g": number, "calories": number, "notes": "string optional" },
+    "lunch": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
     "evening_snack": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
-    "dinner": { "title": "string", "items": ["string"], "protein_g": number, "calories": number, "notes": "string optional" },
+    "dinner": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
     "pre_sleep": { "title": "string", "items": ["string"], "protein_g": number, "calories": number }
   },
-  "supplements": [
-    { "name": "string", "dosage": "string", "timing": "string", "reason": "string", "phase_start": 1, "indian_brand": "string optional", "approx_cost_inr": "string optional" }
-  ],
-  "daily_habits": [
-    { "title": "string", "description": "string", "timing": "string", "category": "string" }
-  ],
-  "sleep_protocol": {
-    "target_bedtime": "10:30 PM",
-    "target_wake_time": "6:30 AM",
-    "sleep_hours_target": number,
-    "tips": ["string"]
-  }
+  "supplements": [{ "name": "string", "dosage": "string", "timing": "string", "reason": "string", "phase_start": 1, "indian_brand": "string", "approx_cost_inr": "string" }],
+  "daily_habits": [{ "title": "string", "description": "string", "timing": "string", "category": "string" }],
+  "sleep_protocol": { "target_bedtime": "string", "target_wake_time": "string", "sleep_hours_target": number, "tips": ["string"] }
 }
 
-Be specific, practical, and India-context appropriate. Weekly schedule should match the commitment_days_per_week (${hp.commitment_days_per_week} gym days). Include at least 5 supplements (phase in gradually), 6-8 daily habits, 5-6 sleep tips.`;
+Workout days must match commitment_days_per_week (${hp.commitment_days_per_week}). Include 3-5 supplements, 4-6 habits, 3-4 sleep tips.`;
 }
 
 Deno.serve(async (req: Request) => {
@@ -275,14 +248,15 @@ Deno.serve(async (req: Request) => {
 
     try {
       const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
+            generationConfig: { temperature: 0.7, maxOutputTokens: 3000 },
           }),
+          signal: AbortSignal.timeout(50000),
         }
       );
       const geminiData = await geminiRes.json();
@@ -297,7 +271,7 @@ Deno.serve(async (req: Request) => {
       // Validate against Zod schema
       const validationResult = PlanDataSchema.safeParse(parsed);
       if (!validationResult.success) {
-        const issues = validationResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+        const issues = validationResult.error.issues.map((i: { path: (string | number)[]; message: string }) => `${i.path.join(".")}: ${i.message}`).join("; ");
         console.error("Zod validation errors:", issues);
         throw new Error("AI returned an invalid plan. Please try again.");
       }
