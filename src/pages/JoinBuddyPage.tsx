@@ -34,10 +34,33 @@ export function JoinBuddyPage() {
     if (!user || !targetId) return;
     setConnecting(true);
     if (targetId === user.id) { setError("You can't buddy with yourself."); setConnecting(false); return; }
+    // Check for existing pending or active connection before inserting
+    const { data: existing } = await supabase.from('buddies')
+      .select('id')
+      .eq('requester_id', user.id)
+      .eq('recipient_id', targetId)
+      .in('status', ['pending', 'active'])
+      .maybeSingle();
+    if (existing) {
+      setError('You already have a pending or active connection with this person.');
+      setConnecting(false);
+      return;
+    }
+    // Also check reverse direction
+    const { data: reverseExisting } = await supabase.from('buddies')
+      .select('id')
+      .eq('requester_id', targetId)
+      .eq('recipient_id', user.id)
+      .in('status', ['pending', 'active'])
+      .maybeSingle();
+    if (reverseExisting) {
+      setError('You already have a pending or active connection with this person.');
+      setConnecting(false);
+      return;
+    }
     const { error: insertError } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetId });
     if (insertError) {
-      if (insertError.code === '23505') setError('You already sent a request to this person.');
-      else setError('Could not connect. Please try again.');
+      setError('Could not connect. Please try again.');
     } else {
       setDone(true);
     }

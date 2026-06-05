@@ -5,12 +5,20 @@ import { z } from "npm:zod@3";
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:5174",
-  "https://bolt.new",
 ];
+
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  // Allow any bolt.new subdomain (production deploys)
+  try {
+    const url = new URL(origin);
+    return url.hostname === "bolt.new" || url.hostname.endsWith(".bolt.new");
+  } catch { return false; }
+}
 
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
-  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allowOrigin = isAllowedOrigin(origin) ? origin : "";
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -291,7 +299,7 @@ Deno.serve(async (req: Request) => {
       if (!validationResult.success) {
         const issues = validationResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
         console.error("Zod validation errors:", issues);
-        throw new Error(`AI returned invalid plan structure: ${issues}`);
+        throw new Error("AI returned an invalid plan. Please try again.");
       }
       planData = validationResult.data;
     } catch (aiErr) {
@@ -311,7 +319,7 @@ Deno.serve(async (req: Request) => {
 
     const validUntil = new Date();
     validUntil.setMonth(validUntil.getMonth() + 3);
-    const today = new Date().toISOString().split("T")[0];
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
     // Delete today's tasks before inserting fresh ones
     await supabase.from("daily_tasks").delete().eq("user_id", user.id).eq("task_date", today);
@@ -352,8 +360,8 @@ async function seedTodaysTasks(
   planId: string,
   planData: Record<string, unknown>
 ) {
-  const today = new Date().toISOString().split("T")[0];
-  const dayName = new Date().toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const dayName = new Date().toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Kolkata" }).toLowerCase();
 
   // Delete existing tasks for today
   await supabase.from("daily_tasks").delete().eq("user_id", userId).eq("task_date", today);

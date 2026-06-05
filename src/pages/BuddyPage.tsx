@@ -109,7 +109,7 @@ export function BuddyPage() {
   }
 
   async function loadBuddyDetail(buddyId: string) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const [tasksRes, logsRes] = await Promise.all([
       supabase.from('daily_tasks').select('*').eq('user_id', buddyId).eq('task_date', today).in('category', ['workout', 'habit', 'sleep']).order('order_index'),
       supabase.from('task_logs').select('*').eq('user_id', buddyId).eq('log_date', today),
@@ -134,10 +134,24 @@ export function BuddyPage() {
     if (rpcError || !targetProfile || targetProfile.length === 0) { setConnectError('Invite code not found.'); setConnectLoading(false); return; }
     const targetId = targetProfile[0].id;
     if (targetId === user.id) { setConnectError("You can't buddy with yourself."); setConnectLoading(false); return; }
+    // Check for existing pending or active connection
+    const { data: existing } = await supabase.from('buddies')
+      .select('id')
+      .eq('requester_id', user.id)
+      .eq('recipient_id', targetId)
+      .in('status', ['pending', 'active'])
+      .maybeSingle();
+    if (existing) { setConnectError('You already have a pending or active connection with this person.'); setConnectLoading(false); return; }
+    const { data: reverseExisting } = await supabase.from('buddies')
+      .select('id')
+      .eq('requester_id', targetId)
+      .eq('recipient_id', user.id)
+      .in('status', ['pending', 'active'])
+      .maybeSingle();
+    if (reverseExisting) { setConnectError('You already have a pending or active connection with this person.'); setConnectLoading(false); return; }
     const { error } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetId });
     if (error) {
-      if (error.code === '23505') setConnectError('You already sent a request to this person.');
-      else setConnectError('Could not send request. Please try again.');
+      setConnectError('Could not send request. Please try again.');
     } else {
       setInviteInput('');
       await loadData();

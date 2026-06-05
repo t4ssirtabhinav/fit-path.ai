@@ -175,7 +175,7 @@ export function DashboardPage() {
     const lastActive = current.last_active_date;
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yest = yesterday.toISOString().split('T')[0];
+    const yest = yesterday.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
     let newStreak = current.current_streak;
     if (completedAny && lastActive !== todayDate) {
@@ -607,9 +607,8 @@ export function DashboardPage() {
 }
 
 async function seedTasksFromPlan(userId: string, planId: string, planData: Record<string, unknown>) {
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const dayName = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase();
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase();
 
   // Only seed if no tasks exist for today (prevent duplication)
   const { data: existing } = await supabase.from('daily_tasks').select('id').eq('user_id', userId).eq('task_date', todayStr).limit(1);
@@ -632,8 +631,17 @@ async function seedTasksFromPlan(userId: string, planId: string, planData: Recor
   }
 
   const meals = (planData.daily_meals as Record<string, { title: string; items: string[] }>) ?? {};
+  const mealLabels: Record<string, string> = {
+    breakfast: 'Breakfast',
+    mid_morning_snack: 'Mid-morning Snack',
+    lunch: 'Lunch',
+    evening_snack: 'Evening Snack',
+    dinner: 'Dinner',
+    pre_sleep: 'Pre-sleep',
+  };
   for (const [key, meal] of Object.entries(meals)) {
-    tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'meal', title: `${key.replace(/_/g, ' ')}: ${meal.title}`, description: meal.items.slice(0, 3).join(', '), order_index: idx++, is_rest_day: false });
+    const label = mealLabels[key] || key.replace(/_/g, ' ');
+    tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'meal', title: `${label}: ${meal.title}`, description: meal.items.slice(0, 3).join(', '), order_index: idx++, is_rest_day: false });
   }
 
   const supplements = ((planData.supplements as Array<{ name: string; dosage: string; timing: string; phase_start: number }>) ?? []).filter(s => s.phase_start === 1).slice(0, 4);

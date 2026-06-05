@@ -8,12 +8,12 @@ export function formatDate(date: Date | string): string {
 }
 
 export function today(): string {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
 export function getDayName(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('en-IN', { weekday: 'long' }).toLowerCase() as string;
+  return d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase() as string;
 }
 
 export function calcBMI(weightKg: number, heightCm: number): number {
