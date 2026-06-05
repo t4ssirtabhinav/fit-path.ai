@@ -84,7 +84,8 @@ export function RegisterPage() {
 
   async function handleGoogle() {
     if (!agreed) { setError('Please accept the medical disclaimer before continuing.'); return; }
-    await supabase.auth.signInWithOAuth({
+    setError('');
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/`,
@@ -92,6 +93,7 @@ export function RegisterPage() {
         queryParams: { access_type: 'online', prompt: 'select_account' },
       },
     });
+    if (error) setError(error.message);
   }
 
   if (emailSent) {
