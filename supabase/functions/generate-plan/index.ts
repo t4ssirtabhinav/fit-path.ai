@@ -1,18 +1,114 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { z } from "npm:zod@3";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://bolt.new",
+];
+
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") ?? "";
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+    Vary: "Origin",
+  };
+}
+
+function sanitizeUserInput(input: string, maxLen: number): string {
+  let s = input.slice(0, maxLen);
+  s = s.replace(/^(you\s+(are|must|should|will|shall|ignore|forget|disregard|act|pretend|roleplay|simulate)\b)/gmi, "[redacted]");
+  s = s.replace(/(ignore\s+(previous|above|all)\s+instructions?)/gmi, "[redacted]");
+  s = s.replace(/(system\s*:\s*)/gi, "[redacted]");
+  return s;
+}
+
+// Zod schemas for validating AI response
+const ExerciseSchema = z.object({
+  name: z.string(),
+  sets: z.number(),
+  reps: z.string(),
+  rest_seconds: z.number(),
+  notes: z.string().optional(),
+});
+
+const WorkoutSchema = z.object({
+  name: z.string(),
+  duration_minutes: z.number(),
+  exercises: z.array(ExerciseSchema).min(1),
+  notes: z.string().optional(),
+});
+
+const DayScheduleSchema = z.object({
+  is_rest_day: z.boolean(),
+  workout: WorkoutSchema.optional(),
+});
+
+const MealSchema = z.object({
+  title: z.string(),
+  items: z.array(z.string()),
+  protein_g: z.number(),
+  calories: z.number(),
+  notes: z.string().optional(),
+});
+
+const SupplementSchema = z.object({
+  name: z.string(),
+  dosage: z.string(),
+  timing: z.string(),
+  reason: z.string(),
+  phase_start: z.number(),
+  indian_brand: z.string().optional(),
+  approx_cost_inr: z.string().optional(),
+});
+
+const HabitSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  timing: z.string(),
+  category: z.string(),
+});
+
+const SleepProtocolSchema = z.object({
+  target_bedtime: z.string(),
+  target_wake_time: z.string(),
+  sleep_hours_target: z.number(),
+  tips: z.array(z.string()),
+});
+
+const PlanDataSchema = z.object({
+  phase: z.number(),
+  phase_name: z.string(),
+  phase_description: z.string(),
+  duration_months: z.number(),
+  personalized_notes: z.string(),
+  calorie_target: z.number(),
+  protein_target_g: z.number(),
+  weekly_schedule: z.record(z.string(), DayScheduleSchema),
+  daily_meals: z.object({
+    breakfast: MealSchema,
+    mid_morning_snack: MealSchema,
+    lunch: MealSchema,
+    evening_snack: MealSchema,
+    dinner: MealSchema,
+    pre_sleep: MealSchema.optional(),
+  }),
+  supplements: z.array(SupplementSchema),
+  daily_habits: z.array(HabitSchema),
+  sleep_protocol: SleepProtocolSchema,
+});
 
 function buildPrompt(hp: Record<string, unknown>): string {
   const goals = (hp.fitness_goals as string[]).join(", ");
   const concerns = (hp.health_concerns as string[]).join(", ");
   const injuries = (hp.injuries as string[]).join(", ") || "none";
   const foodPrefs = (hp.food_preferences as string[]).join(", ") || "general Indian";
-  const personalizationComments = (hp.personalization_comments as string) || "";
+  const rawComments = (hp.personalization_comments as string) || "";
+  const personalizationComments = sanitizeUserInput(rawComments, 500);
 
   return `You are an expert fitness coach, dietician, and nutritionist specialising in Indian context.
 
@@ -86,15 +182,17 @@ Be specific, practical, and India-context appropriate. Weekly schedule should ma
 }
 
 Deno.serve(async (req: Request) => {
+  const ch = corsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, { status: 200, headers: ch });
   }
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...ch, "Content-Type": "application/json" },
       });
     }
 
@@ -107,11 +205,11 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...ch, "Content-Type": "application/json" },
       });
     }
 
-    // Check regeneration limit (once per 30 days)
+    // Check regeneration limit — applies regardless of isRegenerate flag
     const { data: existingPlan } = await supabase
       .from("plans")
       .select("last_regenerated_at, generated_at")
@@ -124,12 +222,13 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const isRegenerate = body.regenerate === true;
 
-    if (isRegenerate && existingPlan?.last_regenerated_at) {
-      const lastRegen = new Date(existingPlan.last_regenerated_at);
-      const daysSince = (Date.now() - lastRegen.getTime()) / (1000 * 60 * 60 * 24);
+    // Rate limit: if an active plan exists, enforce 30-day cooldown
+    if (existingPlan) {
+      const lastDate = existingPlan.last_regenerated_at || existingPlan.generated_at;
+      const daysSince = (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24);
       if (daysSince < 30) {
         return new Response(JSON.stringify({ error: `You can regenerate your plan again in ${Math.ceil(30 - daysSince)} days.` }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 429, headers: { ...ch, "Content-Type": "application/json" },
         });
       }
     }
@@ -143,7 +242,7 @@ Deno.serve(async (req: Request) => {
 
     if (hpError || !hp) {
       return new Response(JSON.stringify({ error: "Health profile not found. Please complete all onboarding steps and try again." }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...ch, "Content-Type": "application/json" },
       });
     }
 
@@ -160,7 +259,7 @@ Deno.serve(async (req: Request) => {
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiApiKey) {
       return new Response(JSON.stringify({ error: "AI service is not configured. Please contact support." }), {
-        status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 503, headers: { ...ch, "Content-Type": "application/json" },
       });
     }
 
@@ -185,12 +284,21 @@ Deno.serve(async (req: Request) => {
       const stripped = rawText.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/gi, "");
       const jsonMatch = stripped.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("No JSON object found in AI response");
-      planData = JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      // Validate against Zod schema
+      const validationResult = PlanDataSchema.safeParse(parsed);
+      if (!validationResult.success) {
+        const issues = validationResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+        console.error("Zod validation errors:", issues);
+        throw new Error(`AI returned invalid plan structure: ${issues}`);
+      }
+      planData = validationResult.data;
     } catch (aiErr) {
       console.error("Gemini AI error:", aiErr);
       const msg = aiErr instanceof Error ? aiErr.message : "AI generation failed";
       return new Response(JSON.stringify({ error: `Failed to generate plan: ${msg}. Please try again.` }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 502, headers: { ...ch, "Content-Type": "application/json" },
       });
     }
 
@@ -228,12 +336,12 @@ Deno.serve(async (req: Request) => {
     await seedTodaysTasks(supabase, user.id, savedPlan.id, planData);
 
     return new Response(JSON.stringify({ plan: savedPlan }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...ch, "Content-Type": "application/json" },
     });
   } catch (e: unknown) {
     console.error("generate-plan error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Internal server error" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...ch, "Content-Type": "application/json" },
     });
   }
 });

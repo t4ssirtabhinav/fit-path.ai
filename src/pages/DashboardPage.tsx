@@ -607,22 +607,28 @@ export function DashboardPage() {
 }
 
 async function seedTasksFromPlan(userId: string, planId: string, planData: Record<string, unknown>) {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const dayName = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase();
 
-  // Delete any stale tasks before seeding to prevent duplication
-  await supabase.from('daily_tasks').delete().eq('user_id', userId).eq('task_date', todayStr);
+  // Only seed if no tasks exist for today (prevent duplication)
+  const { data: existing } = await supabase.from('daily_tasks').select('id').eq('user_id', userId).eq('task_date', todayStr).limit(1);
+  if (existing && existing.length > 0) return;
 
   const tasks: Array<Record<string, unknown>> = [];
   let idx = 0;
 
-  const schedule = (planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }>)?.[dayName];
+  const scheduleMap = planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }> | undefined;
+  const schedule = scheduleMap?.[dayName];
   if (schedule) {
     if (schedule.is_rest_day) {
       tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'habit', title: 'Rest & Recovery Day', description: 'Light walk, stretching, or yoga. Let your muscles recover.', order_index: idx++, is_rest_day: true });
     } else if (schedule.workout) {
       tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'workout', title: schedule.workout.name, description: schedule.workout.exercises.map((e) => `${e.name}: ${e.sets}x${e.reps}`).join(' • '), order_index: idx++, is_rest_day: false });
     }
+  } else if (scheduleMap) {
+    // Fallback: if the day is missing from schedule, treat as rest day
+    tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'habit', title: 'Rest & Recovery Day', description: 'Light walk, stretching, or yoga.', order_index: idx++, is_rest_day: true });
   }
 
   const meals = (planData.daily_meals as Record<string, { title: string; items: string[] }>) ?? {};

@@ -9,6 +9,7 @@ export function JoinBuddyPage() {
   const { code } = useParams<{ code: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [targetId, setTargetId] = useState<string | null>(null);
   const [targetName, setTargetName] = useState('');
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -17,22 +18,29 @@ export function JoinBuddyPage() {
 
   useEffect(() => {
     if (!code) return;
-    supabase.from('profiles').select('id, display_name').eq('invite_code', code.toUpperCase()).maybeSingle().then(({ data }) => {
-      if (data) setTargetName(data.display_name);
-      else setError('This invite link is invalid or has expired.');
+    // Use SECURITY DEFINER function instead of direct table query
+    supabase.rpc('lookup_profile_by_invite_code', { code: code.toUpperCase() }).then(({ data, error: rpcError }) => {
+      if (rpcError || !data || data.length === 0) {
+        setError('This invite link is invalid or has expired.');
+      } else {
+        setTargetId(data[0].id);
+        setTargetName(data[0].display_name);
+      }
       setLoading(false);
     });
   }, [code]);
 
   async function connect() {
-    if (!user || !code) return;
+    if (!user || !targetId) return;
     setConnecting(true);
-    const { data: target } = await supabase.from('profiles').select('id').eq('invite_code', code.toUpperCase()).maybeSingle();
-    if (!target) { setError('Invite code not found.'); setConnecting(false); return; }
-    if (target.id === user.id) { setError("You can't buddy with yourself."); setConnecting(false); return; }
-    const { error: insertError } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: target.id });
-    if (insertError) { setError('Could not connect. You may already have a buddy.'); }
-    else { setDone(true); }
+    if (targetId === user.id) { setError("You can't buddy with yourself."); setConnecting(false); return; }
+    const { error: insertError } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetId });
+    if (insertError) {
+      if (insertError.code === '23505') setError('You already sent a request to this person.');
+      else setError('Could not connect. Please try again.');
+    } else {
+      setDone(true);
+    }
     setConnecting(false);
   }
 

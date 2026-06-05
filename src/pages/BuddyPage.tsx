@@ -129,10 +129,12 @@ export function BuddyPage() {
     setConnectLoading(true);
     setConnectError('');
     const code = inviteInput.trim().toUpperCase();
-    const { data: targetProfile } = await supabase.from('profiles').select('id').eq('invite_code', code).maybeSingle();
-    if (!targetProfile) { setConnectError('Invite code not found.'); setConnectLoading(false); return; }
-    if (targetProfile.id === user.id) { setConnectError("You can't buddy with yourself."); setConnectLoading(false); return; }
-    const { error } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetProfile.id });
+    // Use SECURITY DEFINER function for safe invite code lookup
+    const { data: targetProfile, error: rpcError } = await supabase.rpc('lookup_profile_by_invite_code', { code });
+    if (rpcError || !targetProfile || targetProfile.length === 0) { setConnectError('Invite code not found.'); setConnectLoading(false); return; }
+    const targetId = targetProfile[0].id;
+    if (targetId === user.id) { setConnectError("You can't buddy with yourself."); setConnectLoading(false); return; }
+    const { error } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetId });
     if (error) {
       if (error.code === '23505') setConnectError('You already sent a request to this person.');
       else setConnectError('Could not send request. Please try again.');

@@ -1,4 +1,4 @@
-import React, { useState, useRef, KeyboardEvent } from 'react';
+import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Dumbbell, Sparkles, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -257,20 +257,57 @@ export function OnboardingPage() {
     setData(prev => ({ ...prev, [key]: value }));
   }
 
-  function next() {
+  async function saveDraft() {
+    if (!user) return;
+    await supabase.from('profiles').update({ display_name: data.display_name }).eq('id', user.id);
+    const injuriesWithAllergies = [
+      ...data.injuries,
+      ...data.allergies.map(a => `allergy: ${a}`),
+    ];
+    await supabase.from('health_profiles').upsert({
+      user_id: user.id,
+      age: data.age || null,
+      weight_kg: data.weight_kg || null,
+      height_cm: data.height_cm || null,
+      gender: data.gender || null,
+      fitness_goals: data.fitness_goals,
+      body_type: data.body_type || null,
+      activity_level: data.activity_level || null,
+      diet_type: data.diet_type || null,
+      health_concerns: data.health_concerns,
+      injuries: injuriesWithAllergies,
+      medications: data.medications || null,
+      sleep_hours_current: data.sleep_hours_current,
+      commitment_days_per_week: data.commitment_days_per_week,
+      preferred_workout_time: data.preferred_workout_time || null,
+      food_preferences: data.food_preferences,
+      food_dislikes: data.food_dislikes,
+      goal_timeline_months: data.goal_timeline_months,
+      personalization_comments: data.personalization_comments || null,
+    }, { onConflict: 'user_id' });
+  }
+
+  async function next() {
     setError('');
     if (!validateStep()) return;
+    await saveDraft();
     setStep(s => Math.min(s + 1, TOTAL_STEPS));
   }
 
-  function back() {
+  async function back() {
     setError('');
+    await saveDraft();
     setStep(s => Math.max(s - 1, 1));
   }
 
   function validateStep(): boolean {
-    if (step === 1 && (!data.display_name || !data.age || !data.weight_kg || !data.height_cm || !data.gender)) {
-      setError('Please fill in all fields.'); return false;
+    if (step === 1) {
+      if (!data.display_name.trim()) { setError('Please enter your name.'); return false; }
+      if (data.display_name.trim().length < 2) { setError('Name must be at least 2 characters.'); return false; }
+      if (!data.age || data.age < 16 || data.age > 80) { setError('Age must be between 16 and 80.'); return false; }
+      if (!data.weight_kg || data.weight_kg < 30 || data.weight_kg > 250) { setError('Weight must be between 30 and 250 kg.'); return false; }
+      if (!data.height_cm || data.height_cm < 100 || data.height_cm > 250) { setError('Height must be between 100 and 250 cm.'); return false; }
+      if (!data.gender) { setError('Please select your gender.'); return false; }
     }
     if (step === 2 && data.fitness_goals.length === 0) {
       setError('Select at least one goal.'); return false;
