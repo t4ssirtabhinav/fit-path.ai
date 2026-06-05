@@ -319,10 +319,6 @@ Deno.serve(async (req: Request) => {
 
     const validUntil = new Date();
     validUntil.setMonth(validUntil.getMonth() + 3);
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-
-    // Delete today's tasks before inserting fresh ones
-    await supabase.from("daily_tasks").delete().eq("user_id", user.id).eq("task_date", today);
 
     // Save new plan
     const { data: savedPlan, error: saveError } = await supabase

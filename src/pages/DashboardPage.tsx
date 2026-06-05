@@ -78,8 +78,17 @@ export function DashboardPage() {
   // Info popup for task descriptions
   const [infoTask, setInfoTask] = useState<TaskWithLog | null>(null);
 
-  const todayDate = today();
+  const [todayDate, setTodayDate] = useState(() => today());
   const dateLabel = format(new Date(), 'EEEE, MMMM d');
+
+  // Refresh date after midnight IST
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const current = today();
+      if (current !== todayDate) setTodayDate(current);
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [todayDate]);
 
   const completedCount = tasks.filter(t => t.log?.completed).length;
   const totalCount = tasks.length;
