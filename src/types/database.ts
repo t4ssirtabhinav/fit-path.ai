@@ -9,8 +9,11 @@ export interface Database {
           display_name: string;
           avatar_url: string | null;
           onboarding_complete: boolean;
+          onboarding_path: 'plan' | 'track' | null;
+          country: string | null;
           invite_code: string | null;
           timezone: string;
+          last_onboarded_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -19,8 +22,11 @@ export interface Database {
           display_name?: string;
           avatar_url?: string | null;
           onboarding_complete?: boolean;
+          onboarding_path?: 'plan' | 'track' | null;
+          country?: string | null;
           invite_code?: string | null;
           timezone?: string;
+          last_onboarded_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -29,8 +35,11 @@ export interface Database {
           display_name?: string;
           avatar_url?: string | null;
           onboarding_complete?: boolean;
+          onboarding_path?: 'plan' | 'track' | null;
+          country?: string | null;
           invite_code?: string | null;
           timezone?: string;
+          last_onboarded_at?: string | null;
           updated_at?: string;
         };
       };
@@ -56,6 +65,11 @@ export interface Database {
           food_dislikes: string[];
           goal_timeline_months: number | null;
           personalization_comments: string | null;
+          activity_modalities: string[];
+          onboarding_details: Json;
+          stress_level: number | null;
+          hydration_level: string | null;
+          job_type: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -80,8 +94,34 @@ export interface Database {
           food_dislikes?: string[];
           goal_timeline_months?: number | null;
           personalization_comments?: string | null;
+          activity_modalities?: string[];
+          onboarding_details?: Json;
+          stress_level?: number | null;
+          hydration_level?: string | null;
+          job_type?: string | null;
         };
         Update: Partial<Database['public']['Tables']['health_profiles']['Insert']>;
+      };
+      tracking_config: {
+        Row: {
+          id: string;
+          user_id: string;
+          selected_trackers: string[];
+          reminder_morning: string | null;
+          reminder_evening: string | null;
+          reminder_style: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          selected_trackers?: string[];
+          reminder_morning?: string | null;
+          reminder_evening?: string | null;
+          reminder_style?: string;
+        };
+        Update: Partial<Database['public']['Tables']['tracking_config']['Insert']>;
       };
       plans: {
         Row: {

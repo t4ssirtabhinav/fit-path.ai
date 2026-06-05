@@ -10,6 +10,7 @@ export type Streak = Database['public']['Tables']['streaks']['Row'];
 export type Buddy = Database['public']['Tables']['buddies']['Row'];
 export type DailyLog = Database['public']['Tables']['daily_logs']['Row'];
 export type Milestone = Database['public']['Tables']['milestones']['Row'];
+export type TrackingConfig = Database['public']['Tables']['tracking_config']['Row'];
 
 export type TaskCategory = 'workout' | 'meal' | 'supplement' | 'habit' | 'sleep';
 
@@ -121,24 +122,102 @@ export interface BuddyDetail {
   buddyRelId: string;
 }
 
+// ===== ONBOARDING TYPES =====
+
+export type GoalModality = 'gym' | 'yoga' | 'cardio' | 'home' | 'physio' | 'diet' | 'supplements' | 'concerns';
+
+export interface GymDetails {
+  experience: string;
+  equipment: string;
+  days_per_week: number;
+  primary_focus: string[];
+}
+
+export interface YogaDetails {
+  experience: string;
+  session_duration: string;
+  goals: string[];
+  style: string;
+}
+
+export interface CardioDetails {
+  baseline: string;
+  activities: string[];
+  goal: string;
+  days_per_week: number;
+}
+
+export interface HomeDetails {
+  equipment: string[];
+  space: string;
+  fitness_level: string;
+  primary_focus: string[];
+}
+
+export interface PhysioDetails {
+  reason: string;
+  areas: string[];
+  duration: string;
+  has_professional: string;
+}
+
+export interface DietDetails {
+  diet_type: string;
+  dietary_goal: string;
+  cuisine_style: string[];
+  allergies: string[];
+  food_dislikes: string[];
+  conditions: string[];
+}
+
+export interface SupplementDetails {
+  current: string[];
+  goals: string[];
+  budget: string;
+  veg_preferred: boolean;
+}
+
+export interface ConcernsDetails {
+  items: string[];
+  on_medication: string;
+}
+
+export interface GoalDetails {
+  gym?: GymDetails;
+  yoga?: YogaDetails;
+  cardio?: CardioDetails;
+  home?: HomeDetails;
+  physio?: PhysioDetails;
+  diet?: DietDetails;
+  supplements?: SupplementDetails;
+  concerns?: ConcernsDetails;
+}
+
+export interface OnboardingTrackingConfig {
+  selected_trackers: string[];
+  reminder_morning: string;
+  reminder_evening: string;
+  reminder_style: string;
+}
+
 export interface OnboardingData {
   display_name: string;
+  country: string;
   age: number;
+  gender: string;
   weight_kg: number;
   height_cm: number;
-  gender: string;
-  fitness_goals: string[];
-  body_type: string;
-  activity_level: string;
-  diet_type: string;
-  health_concerns: string[];
-  injuries: string[];
+  onboarding_path: 'plan' | 'track' | null;
+  activity_modalities: GoalModality[];
+  goal_details: GoalDetails;
   sleep_hours_current: number;
-  commitment_days_per_week: number;
+  stress_level: number;
+  hydration_level: string;
+  job_type: string;
   preferred_workout_time: string;
-  food_preferences: string[];
-  food_dislikes: string[];
   goal_timeline_months: number;
+  lifestyle_injuries: string;
   medications: string;
   personalization_comments: string;
+  tracking_config: OnboardingTrackingConfig;
 }

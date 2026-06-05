@@ -91,7 +91,7 @@ function AppRoutes() {
         </RequireAuth>
       } />
 
-      {/* Root redirect */}
+      {/* Root redirect — track users go straight to dashboard after onboarding_complete */}
       <Route path="/" element={
         user
           ? profile?.onboarding_complete

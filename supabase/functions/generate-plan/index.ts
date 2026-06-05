@@ -2,17 +2,19 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 
-const ALLOWED_ORIGINS = [
+const DEV_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:5174",
 ];
 
 function isAllowedOrigin(origin: string): boolean {
-  if (ALLOWED_ORIGINS.includes(origin)) return true;
-  // Allow any bolt.new subdomain (production deploys)
+  if (!origin) return false;
+  if (DEV_ORIGINS.includes(origin)) return true;
   try {
     const url = new URL(origin);
-    return url.hostname === "bolt.new" || url.hostname.endsWith(".bolt.new");
+    // Allow any HTTPS origin — JWT authentication is the real security boundary.
+    // This covers bolt.new, Netlify, Vercel, custom domains, etc.
+    return url.protocol === "https:";
   } catch { return false; }
 }
 
@@ -190,6 +192,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const body = await req.json().catch(() => ({}));
+    const isRegenerate = body.regenerate === true;
+
+    // Fetch profile early — needed for both rate-limit bypass and prompt building
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("display_name, last_onboarded_at")
+      .eq("id", user.id)
+      .maybeSingle();
+
     // Check regeneration limit — applies regardless of isRegenerate flag
     const { data: existingPlan } = await supabase
       .from("plans")
@@ -200,14 +212,16 @@ Deno.serve(async (req: Request) => {
       .limit(1)
       .maybeSingle();
 
-    const body = await req.json().catch(() => ({}));
-    const isRegenerate = body.regenerate === true;
-
-    // Rate limit: if an active plan exists, enforce 30-day cooldown
+    // Rate limit: if an active plan exists, enforce 30-day cooldown.
+    // Exception: if the user re-onboarded after the current plan was generated,
+    // their last_onboarded_at will be newer — allow them to get a fresh plan.
     if (existingPlan) {
-      const lastDate = existingPlan.last_regenerated_at || existingPlan.generated_at;
-      const daysSince = (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24);
-      if (daysSince < 30) {
+      const lastPlanDate = existingPlan.last_regenerated_at || existingPlan.generated_at;
+      const daysSince = (Date.now() - new Date(lastPlanDate).getTime()) / (1000 * 60 * 60 * 24);
+      const recentlyOnboarded =
+        profile?.last_onboarded_at &&
+        new Date(profile.last_onboarded_at) > new Date(lastPlanDate);
+      if (daysSince < 30 && !recentlyOnboarded) {
         return new Response(JSON.stringify({ error: `You can regenerate your plan again in ${Math.ceil(30 - daysSince)} days.` }), {
           status: 429, headers: { ...ch, "Content-Type": "application/json" },
         });
@@ -226,13 +240,6 @@ Deno.serve(async (req: Request) => {
         status: 400, headers: { ...ch, "Content-Type": "application/json" },
       });
     }
-
-    // Fetch display name
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle();
 
     const hpWithName = { ...hp, display_name: profile?.display_name ?? "User" };
     const prompt = buildPrompt(hpWithName);

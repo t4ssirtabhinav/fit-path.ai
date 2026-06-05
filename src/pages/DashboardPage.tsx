@@ -374,11 +374,23 @@ export function DashboardPage() {
       {tasks.length === 0 ? (
         <Card className="p-8 text-center">
           <Coffee className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-          <p className="text-white font-semibold mb-1">No tasks for today yet</p>
-          <p className="text-gray-500 text-sm mb-4">Generate your plan to get started</p>
-          <Button onClick={() => navigate('/generate-plan')} size="sm">
-            Generate plan
-          </Button>
+          {profile?.onboarding_path === 'track' ? (
+            <>
+              <p className="text-white font-semibold mb-1">Nothing logged today yet</p>
+              <p className="text-gray-500 text-sm mb-4">Use the Log notes button above to record workouts, meals, or how you're feeling.</p>
+              <Button variant="secondary" onClick={() => navigate('/profile')} size="sm">
+                Update tracking setup
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="text-white font-semibold mb-1">No tasks for today yet</p>
+              <p className="text-gray-500 text-sm mb-4">Generate your plan to get started</p>
+              <Button onClick={() => navigate('/generate-plan')} size="sm">
+                Generate plan
+              </Button>
+            </>
+          )}
         </Card>
       ) : (
         Object.entries(groupedTasks).map(([category, catTasks]) => (
