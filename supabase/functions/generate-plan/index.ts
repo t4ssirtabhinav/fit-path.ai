@@ -112,29 +112,37 @@ const PlanDataSchema = z.object({
   sleep_protocol: SleepProtocolSchema,
 });
 
+function safeList(val: unknown, fallback = "none"): string {
+  return Array.isArray(val) && val.length > 0 ? (val as string[]).join(", ") : fallback;
+}
+
 function buildPrompt(hp: Record<string, unknown>): string {
-  const goals = (hp.fitness_goals as string[]).join(", ");
-  const concerns = (hp.health_concerns as string[]).join(", ");
-  const injuries = (hp.injuries as string[]).join(", ") || "none";
-  const foodPrefs = (hp.food_preferences as string[]).join(", ") || "general Indian";
+  const goals = safeList(hp.fitness_goals, "general fitness");
+  const concerns = safeList(hp.health_concerns, "none");
+  const injuries = safeList(hp.injuries, "none");
+  const foodPrefs = safeList(hp.food_preferences, "general Indian");
+  const foodDislikes = safeList(hp.food_dislikes, "none");
   const rawComments = (hp.personalization_comments as string) || "";
   const personalizationComments = sanitizeUserInput(rawComments, 500);
+  const commitmentDays = (hp.commitment_days_per_week as number | null) ?? 3;
 
   return `You are an expert Indian fitness coach and dietician. Create a Phase 1 (Month 1-3) personalised plan for:
 
-Name: ${hp.display_name ?? "User"} | Age: ${hp.age} | Gender: ${hp.gender}
-Weight: ${hp.weight_kg}kg | Height: ${hp.height_cm}cm | Body type: ${hp.body_type}
-Activity: ${hp.activity_level} | Diet: ${hp.diet_type} | Gym days/week: ${hp.commitment_days_per_week}
+Name: ${hp.display_name ?? "User"} | Age: ${hp.age ?? "unknown"} | Gender: ${hp.gender ?? "unspecified"}
+Weight: ${hp.weight_kg ?? "?"}kg | Height: ${hp.height_cm ?? "?"}cm | Body type: ${hp.body_type ?? "average"}
+Activity: ${hp.activity_level ?? "moderate"} | Diet: ${hp.diet_type ?? "vegetarian"} | Gym days/week: ${commitmentDays}
 Goals: ${goals}
 Health concerns: ${concerns}
 Injuries: ${injuries}
-Food preferences: ${foodPrefs} | Dislikes: ${(hp.food_dislikes as string[]).join(", ") || "none"}
-Sleep: ${hp.sleep_hours_current}h | Preferred workout time: ${hp.preferred_workout_time}
-Timeline: ${hp.goal_timeline_months} months${personalizationComments ? `\nNotes: ${personalizationComments}` : ""}
+Food preferences: ${foodPrefs} | Dislikes: ${foodDislikes}
+Sleep: ${hp.sleep_hours_current ?? 7}h | Preferred workout time: ${hp.preferred_workout_time ?? "morning"}
+Timeline: ${hp.goal_timeline_months ?? 3} months${personalizationComments ? `\nNotes: ${personalizationComments}` : ""}
 
 Rules: Indian ingredients only (dal, roti, paneer, makhana, chaas etc). Indian supplement brands (AS-IT-IS, MuscleBlaze, Nutrabay, WOW). Strict diet type adherence. Gradual progression for sedentary users.
 
-Return ONLY valid JSON, no markdown, matching this exact schema:
+IMPORTANT: Return ONLY a raw JSON object. No markdown, no code fences, no explanation text. Start your response with { and end with }.
+
+Schema:
 {
   "phase": 1, "phase_name": "Foundation", "phase_description": "2-3 sentences",
   "duration_months": 3, "personalized_notes": "3-4 sentences of specific advice",
@@ -161,7 +169,7 @@ Return ONLY valid JSON, no markdown, matching this exact schema:
   "sleep_protocol": { "target_bedtime": "string", "target_wake_time": "string", "sleep_hours_target": number, "tips": ["string"] }
 }
 
-Workout days must match commitment_days_per_week (${hp.commitment_days_per_week}). Include 3-5 supplements, 4-6 habits, 3-4 sleep tips.`;
+Workout days must match commitment_days_per_week (${commitmentDays}). Include 3-5 supplements, 4-6 habits, 3-4 sleep tips.`;
 }
 
 Deno.serve(async (req: Request) => {
@@ -261,18 +269,38 @@ Deno.serve(async (req: Request) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 3000 },
+            // 6000 tokens ensures the full plan JSON is never truncated
+            generationConfig: { temperature: 0.7, maxOutputTokens: 6000 },
           }),
           signal: AbortSignal.timeout(50000),
         }
       );
       const geminiData = await geminiRes.json();
-      const rawText: string = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+      // Surface Gemini API-level errors (bad key, quota exceeded, etc.)
+      if (!geminiRes.ok || geminiData.error) {
+        const msg = geminiData?.error?.message ?? `Gemini HTTP ${geminiRes.status}`;
+        throw new Error(`AI service error: ${msg}`);
+      }
+
+      const candidate = geminiData?.candidates?.[0];
+      if (!candidate?.content) {
+        const reason = candidate?.finishReason ?? "no candidates returned";
+        if (reason === "SAFETY") {
+          throw new Error("AI declined to generate a plan due to content safety filters. Please review your profile for any terms that may be flagged.");
+        }
+        throw new Error(`AI returned an empty response (${reason}). Please try again.`);
+      }
+
+      const rawText: string = candidate.content.parts?.[0]?.text ?? "";
 
       // Strip markdown code fences if present, then extract JSON
-      const stripped = rawText.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/gi, "");
+      const stripped = rawText.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/gi, "").trim();
       const jsonMatch = stripped.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("No JSON object found in AI response");
+      if (!jsonMatch) {
+        console.error("Gemini raw response (no JSON found):", rawText.slice(0, 500));
+        throw new Error("AI response did not contain valid JSON. Please try again.");
+      }
       const parsed = JSON.parse(jsonMatch[0]);
 
       // Validate against Zod schema
