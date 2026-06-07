@@ -394,7 +394,7 @@ Deno.serve(async (req: Request) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            // 8192 is gemini-2.0-flash's actual max output; native JSON mode
+            // 8192 keeps us within budget for an elaborate structured plan; native JSON mode
             // removes the need for markdown-fence stripping and reduces malformed output.
             generationConfig: { temperature: 0.7, maxOutputTokens: 8192, responseMimeType: "application/json" },
           }),
