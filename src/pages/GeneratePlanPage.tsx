@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -20,16 +20,9 @@ export function GeneratePlanPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
-  // `user` gets a new object reference on every onAuthStateChange event
-  // (INITIAL_SESSION, TOKEN_REFRESHED, etc.), and StrictMode double-invokes
-  // effects in dev — without this guard, generate() fires multiple concurrent
-  // requests per page visit, which is enough to exhaust the Gemini API's
-  // per-minute rate limit on its own.
-  const hasStartedRef = useRef(false);
 
   useEffect(() => {
-    if (!user || hasStartedRef.current) return;
-    hasStartedRef.current = true;
+    if (!user) return;
 
     // Advance through steps every 3s, then pulse the last one until done
     const interval = setInterval(() => {
