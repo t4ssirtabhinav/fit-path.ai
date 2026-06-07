@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { today } from '../lib/utils';
+import { today, DEFAULT_TIMEZONE } from '../lib/utils';
+import { parsePlanData } from '../lib/planSchema';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import type { DailyTask, TaskLog, Streak, DailyLog } from '../types';
@@ -58,6 +59,7 @@ function CompletionRing({ percent }: { percent: number }) {
 
 export function DashboardPage() {
   const { user, profile } = useAuth();
+  const tz = profile?.timezone || DEFAULT_TIMEZONE;
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskWithLog[]>([]);
   const [streak, setStreak] = useState<Streak | null>(null);
@@ -78,17 +80,17 @@ export function DashboardPage() {
   // Info popup for task descriptions
   const [infoTask, setInfoTask] = useState<TaskWithLog | null>(null);
 
-  const [todayDate, setTodayDate] = useState(() => today());
+  const [todayDate, setTodayDate] = useState(() => today(tz));
   const dateLabel = format(new Date(), 'EEEE, MMMM d');
 
-  // Refresh date after midnight IST
+  // Refresh date after midnight in the user's timezone
   useEffect(() => {
     const interval = setInterval(() => {
-      const current = today();
+      const current = today(tz);
       if (current !== todayDate) setTodayDate(current);
     }, 60_000);
     return () => clearInterval(interval);
-  }, [todayDate]);
+  }, [todayDate, tz]);
 
   const completedCount = tasks.filter(t => t.log?.completed).length;
   const totalCount = tasks.length;
@@ -113,7 +115,7 @@ export function DashboardPage() {
     if (enriched.length === 0) {
       const { data: plan } = await supabase.from('plans').select('id, plan_data').eq('user_id', user.id).eq('is_active', true).order('generated_at', { ascending: false }).limit(1).maybeSingle();
       if (plan) {
-        await seedTasksFromPlan(user.id, plan.id, plan.plan_data as Record<string, unknown>);
+        await seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
         const { data: newTasks } = await supabase.from('daily_tasks').select('*').eq('user_id', user.id).eq('task_date', todayDate).order('order_index');
         setTasks((newTasks ?? []).map(t => ({ ...t, log: undefined })));
       }
@@ -184,7 +186,7 @@ export function DashboardPage() {
     const lastActive = current.last_active_date;
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yest = yesterday.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const yest = yesterday.toLocaleDateString('en-CA', { timeZone: tz });
 
     let newStreak = current.current_streak;
     if (completedAny && lastActive !== todayDate) {
@@ -205,14 +207,23 @@ export function DashboardPage() {
   async function logRestDay() {
     if (!user) return;
     setRestDayLogging(true);
-    for (const task of tasks.filter(t => !t.log?.completed)) {
-      await supabase.from('task_logs').upsert({
-        user_id: user.id,
-        task_id: task.id,
-        log_date: todayDate,
-        completed: false,
-        notes: 'Rest day',
-      }, { onConflict: 'user_id,task_id,log_date' });
+    const pending = tasks.filter(t => !t.log?.completed);
+    if (pending.length > 0) {
+      const { error } = await supabase.from('task_logs').upsert(
+        pending.map(task => ({
+          user_id: user.id,
+          task_id: task.id,
+          log_date: todayDate,
+          completed: false,
+          notes: 'Rest day',
+        })),
+        { onConflict: 'user_id,task_id,log_date' }
+      );
+      if (error) {
+        console.error('Failed to log rest day:', error);
+        setRestDayLogging(false);
+        return;
+      }
     }
     await fetchData();
     setRestDayLogging(false);
@@ -627,9 +638,12 @@ export function DashboardPage() {
   );
 }
 
-async function seedTasksFromPlan(userId: string, planId: string, planData: Record<string, unknown>) {
-  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase();
+async function seedTasksFromPlan(userId: string, planId: string, rawPlanData: unknown, timezone: string) {
+  const planData = parsePlanData(rawPlanData);
+  if (!planData) return;
+
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+  const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone }).toLowerCase();
 
   // Only seed if no tasks exist for today (prevent duplication)
   const { data: existing } = await supabase.from('daily_tasks').select('id').eq('user_id', userId).eq('task_date', todayStr).limit(1);
@@ -651,7 +665,7 @@ async function seedTasksFromPlan(userId: string, planId: string, planData: Recor
     tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'habit', title: 'Rest & Recovery Day', description: 'Light walk, stretching, or yoga.', order_index: idx++, is_rest_day: true });
   }
 
-  const meals = (planData.daily_meals as Record<string, { title: string; items: string[] }>) ?? {};
+  const meals = (planData.daily_meals as unknown as Record<string, { title: string; items: string[] }> | undefined) ?? {};
   const mealLabels: Record<string, string> = {
     breakfast: 'Breakfast',
     mid_morning_snack: 'Mid-morning Snack',

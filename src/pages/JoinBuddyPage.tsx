@@ -60,7 +60,9 @@ export function JoinBuddyPage() {
     }
     const { error: insertError } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetId });
     if (insertError) {
-      setError('Could not connect. Please try again.');
+      setError(insertError.code === '23505'
+        ? 'You already have a pending or active connection with this person.'
+        : 'Could not connect. Please try again.');
     } else {
       setDone(true);
     }

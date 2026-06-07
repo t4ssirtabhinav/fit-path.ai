@@ -57,6 +57,7 @@ export interface Database {
           diet_type: string | null;
           health_concerns: string[];
           injuries: string[];
+          allergies: string[];
           medications: string | null;
           sleep_hours_current: number | null;
           commitment_days_per_week: number | null;
@@ -86,6 +87,7 @@ export interface Database {
           diet_type?: string | null;
           health_concerns?: string[];
           injuries?: string[];
+          allergies?: string[];
           medications?: string | null;
           sleep_hours_current?: number | null;
           commitment_days_per_week?: number | null;

@@ -40,15 +40,15 @@ function sanitizeUserInput(input: string, maxLen: number): string {
 // Zod schemas for validating AI response
 const ExerciseSchema = z.object({
   name: z.string(),
-  sets: z.number(),
+  sets: z.coerce.number(),
   reps: z.string(),
-  rest_seconds: z.number(),
+  rest_seconds: z.coerce.number(),
   notes: z.string().optional(),
 });
 
 const WorkoutSchema = z.object({
   name: z.string(),
-  duration_minutes: z.number(),
+  duration_minutes: z.coerce.number(),
   exercises: z.array(ExerciseSchema).min(1),
   notes: z.string().optional(),
 });
@@ -61,8 +61,8 @@ const DayScheduleSchema = z.object({
 const MealSchema = z.object({
   title: z.string(),
   items: z.array(z.string()),
-  protein_g: z.number(),
-  calories: z.number(),
+  protein_g: z.coerce.number(),
+  calories: z.coerce.number(),
   notes: z.string().optional(),
 });
 
@@ -71,9 +71,9 @@ const SupplementSchema = z.object({
   dosage: z.string(),
   timing: z.string(),
   reason: z.string(),
-  phase_start: z.number(),
-  indian_brand: z.string().optional(),
-  approx_cost_inr: z.string().optional(),
+  phase_start: z.coerce.number(),
+  what_to_look_for: z.string().optional(),
+  approx_cost_local: z.string().optional(),
 });
 
 const HabitSchema = z.object({
@@ -86,19 +86,24 @@ const HabitSchema = z.object({
 const SleepProtocolSchema = z.object({
   target_bedtime: z.string(),
   target_wake_time: z.string(),
-  sleep_hours_target: z.number(),
+  sleep_hours_target: z.coerce.number(),
   tips: z.array(z.string()),
 });
 
+const AddOnSchema = z.object({
+  area: z.string(),
+  reason: z.string(),
+});
+
 const PlanDataSchema = z.object({
-  phase: z.number(),
+  phase: z.coerce.number(),
   phase_name: z.string(),
   phase_description: z.string(),
-  duration_months: z.number(),
+  duration_months: z.coerce.number(),
   personalized_notes: z.string(),
-  calorie_target: z.number(),
-  protein_target_g: z.number(),
-  weekly_schedule: z.record(z.string(), DayScheduleSchema),
+  calorie_target: z.coerce.number(),
+  protein_target_g: z.coerce.number(),
+  weekly_schedule: z.record(z.string(), DayScheduleSchema).optional(),
   daily_meals: z.object({
     breakfast: MealSchema,
     mid_morning_snack: MealSchema,
@@ -106,70 +111,190 @@ const PlanDataSchema = z.object({
     evening_snack: MealSchema,
     dinner: MealSchema,
     pre_sleep: MealSchema.optional(),
-  }),
-  supplements: z.array(SupplementSchema),
-  daily_habits: z.array(HabitSchema),
-  sleep_protocol: SleepProtocolSchema,
+  }).optional(),
+  supplements: z.array(SupplementSchema).optional(),
+  daily_habits: z.array(HabitSchema).optional(),
+  sleep_protocol: SleepProtocolSchema.optional(),
+  suggested_addons: z.array(AddOnSchema).optional(),
 });
 
 function safeList(val: unknown, fallback = "none"): string {
   return Array.isArray(val) && val.length > 0 ? (val as string[]).join(", ") : fallback;
 }
 
+// Modalities that translate into structured workout days in weekly_schedule.
+// (diet/supplements/concerns shape other sections instead.)
+const WORKOUT_MODALITIES = new Set(["gym", "yoga", "cardio", "home", "physio"]);
+
+const MODALITY_LABELS: Record<string, string> = {
+  gym: "gym/strength training",
+  yoga: "yoga practice",
+  cardio: "cardio training",
+  home: "home workouts",
+  physio: "physiotherapy/rehab sessions",
+};
+
+// `injuries` historically also carried physio focus areas as "physio: <area>" entries.
+// Allergies now live in their own column (see migration add_allergies_column).
+function parseInjuries(raw: unknown): { plain: string[]; physioAreas: string[] } {
+  const arr = Array.isArray(raw) ? (raw as string[]) : [];
+  return {
+    physioAreas: arr.filter((i) => i.startsWith("physio: ")).map((i) => i.replace("physio: ", "")),
+    plain: arr.filter((i) => !i.startsWith("physio: ")),
+  };
+}
+
+function describeModality(modality: string, details: Record<string, unknown> | undefined): string {
+  const d = details ?? {};
+  switch (modality) {
+    case "gym":
+      return `Gym/strength training — experience: ${d.experience ?? "unspecified"}, equipment access: ${d.equipment ?? "unspecified"}, ${d.days_per_week ?? "?"} sessions/week, focus areas: ${safeList(d.primary_focus)}`;
+    case "yoga":
+      return `Yoga — experience: ${d.experience ?? "unspecified"}, session length: ${d.session_duration ?? "unspecified"}, style: ${d.style ?? "general"}, goals: ${safeList(d.goals)}`;
+    case "cardio":
+      return `Cardio — current baseline: ${d.baseline ?? "unspecified"}, preferred activities: ${safeList(d.activities)}, goal: ${d.goal ?? "general fitness"}, ${d.days_per_week ?? "?"} sessions/week`;
+    case "home":
+      return `Home workouts — available equipment: ${safeList(d.equipment, "bodyweight only")}, space: ${d.space ?? "limited"}, level: ${d.fitness_level ?? "beginner"}, focus areas: ${safeList(d.primary_focus)}`;
+    case "physio":
+      return `Physiotherapy/rehab — reason: ${d.reason ?? "unspecified"}, target areas: ${safeList(d.areas)}, duration so far: ${d.duration ?? "unspecified"}, working with a professional: ${d.has_professional ?? "unknown"}`;
+    case "diet":
+      return `Diet/nutrition focus — type: ${d.diet_type ?? "unspecified"}, goal: ${d.dietary_goal ?? "general health"}, cuisine preferences: ${safeList(d.cuisine_style)}`;
+    case "supplements":
+      return `Supplements — currently taking: ${safeList(d.current)}, goals: ${safeList(d.goals)}, monthly budget: ${d.budget ?? "unspecified"}, prefers vegetarian sources: ${d.veg_preferred ? "yes" : "no"}`;
+    case "concerns":
+      return `Health concerns to factor in — ${safeList(d.items)}; currently on medication: ${d.on_medication ?? "unknown"}`;
+    default:
+      return modality;
+  }
+}
+
+// Derives a phase structure from the user's own timeline + starting point instead
+// of assuming everyone follows a fixed "Phase 1: Month 1-3" template.
+function derivePhasePlan(timelineMonths: number, activityLevel: string): string {
+  const months = timelineMonths || 3;
+  const beginner = activityLevel === "sedentary" || activityLevel === "light";
+  if (months <= 2) {
+    return `This is a short ${months}-month window — design ONE focused phase covering the full duration with realistic, achievable goals for this timeframe. Do not propose a multi-phase progression that would not fit.`;
+  }
+  if (months <= 5) {
+    return `Over ${months} months, structure the plan as TWO phases: an initial foundation/adaptation phase (${beginner ? "give it more weight, since the user is starting from a lower activity baseline" : "can be shorter, since the user already has some baseline"}), followed by a progression phase building on it. Decide each phase's exact length and focus from the user's profile — do not assume a fixed split.`;
+  }
+  return `Over ${months} months, structure the plan as up to THREE phases (e.g. foundation → build → peak/maintain) with lengths derived from the user's starting point (activity level: ${activityLevel || "unspecified"}) — a beginner needs a longer foundation phase, a more experienced person can compress it. You decide the names, lengths and focus of each phase; just ensure they progress logically toward the stated goal by the end of the timeline.`;
+}
+
+function buildNutritionRules(country: string, dietType: string, foodPrefs: string, foodDislikes: string, allergies: string): string {
+  const allergyLine = allergies !== "none"
+    ? `\nCRITICAL — the user has these allergies/intolerances: ${allergies}. NEVER include these, or dishes/ingredients that commonly contain them, in any meal or supplement suggestion. Offer safe substitutes where relevant.`
+    : "";
+  return `Nutrition guidance must use ingredients and dishes that are realistically available and culturally familiar in ${country}. Build meals around locally accessible staples for that region — do not default to a different country's cuisine. Respect the user's diet type (${dietType}), cuisine preferences (${foodPrefs}) and dislikes (${foodDislikes}).${allergyLine}`;
+}
+
+function buildSupplementGuidance(): string {
+  return `When suggesting supplements, recommend categories and what to look for — NOT specific commercial brands or products. Stay unbiased and do not endorse any brand or manufacturer. For each item, explain why it fits this person's goals, lifestyle and budget, and describe what to check for when buying locally (e.g. third-party testing, label transparency, typical price range in their region) instead of naming a brand.`;
+}
+
 function buildPrompt(hp: Record<string, unknown>): string {
+  const modalities = (Array.isArray(hp.activity_modalities) ? hp.activity_modalities : []) as string[];
+  const details = (hp.onboarding_details ?? {}) as Record<string, Record<string, unknown>>;
+
   const goals = safeList(hp.fitness_goals, "general fitness");
   const concerns = safeList(hp.health_concerns, "none");
-  const injuries = safeList(hp.injuries, "none");
-  const foodPrefs = safeList(hp.food_preferences, "general Indian");
+  const { plain: injuries, physioAreas } = parseInjuries(hp.injuries);
+  const allergies = safeList(hp.allergies, "none");
+  const foodPrefs = safeList(hp.food_preferences, "no strong preference");
   const foodDislikes = safeList(hp.food_dislikes, "none");
   const rawComments = (hp.personalization_comments as string) || "";
   const personalizationComments = sanitizeUserInput(rawComments, 500);
   const commitmentDays = (hp.commitment_days_per_week as number | null) ?? 3;
+  const country = (hp.country as string) || "their region";
+  const timelineMonths = (hp.goal_timeline_months as number | null) ?? 3;
+  const activityLevel = (hp.activity_level as string) || "moderate";
+  const dietType = (hp.diet_type as string) || "no specific diet type";
 
-  return `You are an expert Indian fitness coach and dietician. Create a Phase 1 (Month 1-3) personalised plan for:
+  const hasWorkout = modalities.some((m) => WORKOUT_MODALITIES.has(m));
+  const hasDiet = modalities.includes("diet");
+  const hasSupplements = modalities.includes("supplements");
+  // "concerns" or a broad multi-modality selection signals interest in a holistic
+  // approach — only then do we bake habits/sleep into the core plan; otherwise
+  // they're offered as opt-in add-ons (per user direction: don't assume everyone
+  // wants these tracked just because they picked a narrow regime).
+  const wantsHolistic = modalities.includes("concerns") || modalities.length >= 4;
 
+  const modalityLines = modalities.length > 0
+    ? modalities.map((m) => `- ${describeModality(m, details[m])}`).join("\n")
+    : "- No specific regime selected; provide general fitness guidance.";
+
+  const sections: string[] = [];
+  const schemaFields: string[] = [];
+  const addOnAreas: string[] = [];
+
+  if (hasWorkout) {
+    const selectedWorkoutModalities = modalities.filter((m) => WORKOUT_MODALITIES.has(m)).map((m) => MODALITY_LABELS[m] ?? m);
+    sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}) at roughly ${commitmentDays} active sessions/week. If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Mark non-active days as rest days.`);
+    schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number }] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
+  } else {
+    addOnAreas.push("structured workouts");
+  }
+
+  if (hasDiet) {
+    sections.push(`MEALS: Provide a full day of meals (breakfast, mid-morning snack, lunch, evening snack, dinner, optional pre-sleep). ${buildNutritionRules(country, dietType, foodPrefs, foodDislikes, allergies)}`);
+    schemaFields.push(`"daily_meals": { "breakfast": {...}, "mid_morning_snack": {...}, "lunch": {...}, "evening_snack": {...}, "dinner": {...}, "pre_sleep": {...optional...} } — each meal: { "title": "string", "items": ["string"], "protein_g": number, "calories": number }`);
+  } else {
+    addOnAreas.push("a structured meal plan");
+  }
+
+  if (hasSupplements) {
+    sections.push(`SUPPLEMENTS: ${buildSupplementGuidance()}`);
+    schemaFields.push(`"supplements": [{ "name": "string", "dosage": "string", "timing": "string", "reason": "string", "phase_start": number, "what_to_look_for": "string", "approx_cost_local": "string" }] — 3-5 items, no brand names`);
+  } else {
+    addOnAreas.push("supplements");
+  }
+
+  if (wantsHolistic) {
+    sections.push(`DAILY HABITS & SLEEP: Include practical daily habits and a sleep protocol that support this person's goals and lifestyle (job type: ${hp.job_type ?? "unspecified"}, stress level: ${hp.stress_level ?? "unspecified"}/5, hydration: ${hp.hydration_level ?? "unspecified"}, current sleep: ${hp.sleep_hours_current ?? "unspecified"}h).`);
+    schemaFields.push(`"daily_habits": [{ "title": "string", "description": "string", "timing": "string", "category": "string" }] — 4-6 items`);
+    schemaFields.push(`"sleep_protocol": { "target_bedtime": "string", "target_wake_time": "string", "sleep_hours_target": number, "tips": ["string"] }`);
+  } else {
+    addOnAreas.push("daily habits and a sleep protocol");
+  }
+
+  const addOnInstruction = addOnAreas.length > 0
+    ? `The user did NOT select ${addOnAreas.join(", ")} as part of their regime. Do not generate full plan/tracking content for these areas — instead add a "suggested_addons" array with a 1-2 sentence note per area on why adding it could help them reach their goal (so they can opt in later). Schema: "suggested_addons": [{ "area": "string", "reason": "string" }]`
+    : `The user opted into every major plan area — omit "suggested_addons" entirely.`;
+
+  return `You are an expert fitness coach and dietician creating a personalised plan for someone in ${country}.
+
+USER PROFILE
 Name: ${hp.display_name ?? "User"} | Age: ${hp.age ?? "unknown"} | Gender: ${hp.gender ?? "unspecified"}
 Weight: ${hp.weight_kg ?? "?"}kg | Height: ${hp.height_cm ?? "?"}cm | Body type: ${hp.body_type ?? "average"}
-Activity: ${hp.activity_level ?? "moderate"} | Diet: ${hp.diet_type ?? "vegetarian"} | Gym days/week: ${commitmentDays}
-Goals: ${goals}
+Activity level: ${activityLevel} | Job type: ${hp.job_type ?? "unspecified"} | Preferred workout time: ${hp.preferred_workout_time ?? "flexible"}
+Overall goals: ${goals}
+Goal timeline: ${timelineMonths} months
 Health concerns: ${concerns}
-Injuries: ${injuries}
+Injuries: ${injuries.length ? injuries.join(", ") : "none"}${physioAreas.length ? ` | Physio focus areas: ${physioAreas.join(", ")}` : ""}
+ALLERGIES (must strictly avoid — see rules below): ${allergies}
 Food preferences: ${foodPrefs} | Dislikes: ${foodDislikes}
-Sleep: ${hp.sleep_hours_current ?? 7}h | Preferred workout time: ${hp.preferred_workout_time ?? "morning"}
-Timeline: ${hp.goal_timeline_months ?? 3} months${personalizationComments ? `\nNotes: ${personalizationComments}` : ""}
+${personalizationComments ? `Additional notes from user: ${personalizationComments}` : ""}
 
-Rules: Indian ingredients only (dal, roti, paneer, makhana, chaas etc). Indian supplement brands (AS-IT-IS, MuscleBlaze, Nutrabay, WOW). Strict diet type adherence. Gradual progression for sedentary users.
+WHAT THE USER WANTS TO FOCUS ON (their selected regime — build the plan around exactly this; do not assume a generic gym-based program if they didn't choose one):
+${modalityLines}
 
-IMPORTANT: Return ONLY a raw JSON object. No markdown, no code fences, no explanation text. Start your response with { and end with }.
+PHASE STRUCTURE
+${derivePhasePlan(timelineMonths, activityLevel)}
+Set "phase" to the current phase number (starting at 1), give it a name and description, and set "duration_months" to that phase's own length (not the full timeline).
 
-Schema:
+PLAN SECTIONS TO GENERATE
+${sections.join("\n")}
+
+${addOnInstruction}
+
+IMPORTANT: Return ONLY a raw JSON object matching this shape — no markdown, no code fences, no explanation text. Start with { and end with }.
 {
-  "phase": 1, "phase_name": "Foundation", "phase_description": "2-3 sentences",
-  "duration_months": 3, "personalized_notes": "3-4 sentences of specific advice",
+  "phase": number, "phase_name": "string", "phase_description": "2-3 sentences",
+  "duration_months": number, "personalized_notes": "3-4 sentences of specific advice tailored to this person",
   "calorie_target": number, "protein_target_g": number,
-  "weekly_schedule": {
-    "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number }] } },
-    "tuesday": { "is_rest_day": true },
-    "wednesday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [...] } },
-    "thursday": { "is_rest_day": true },
-    "friday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [...] } },
-    "saturday": { "is_rest_day": true },
-    "sunday": { "is_rest_day": true }
-  },
-  "daily_meals": {
-    "breakfast": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
-    "mid_morning_snack": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
-    "lunch": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
-    "evening_snack": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
-    "dinner": { "title": "string", "items": ["string"], "protein_g": number, "calories": number },
-    "pre_sleep": { "title": "string", "items": ["string"], "protein_g": number, "calories": number }
-  },
-  "supplements": [{ "name": "string", "dosage": "string", "timing": "string", "reason": "string", "phase_start": 1, "indian_brand": "string", "approx_cost_inr": "string" }],
-  "daily_habits": [{ "title": "string", "description": "string", "timing": "string", "category": "string" }],
-  "sleep_protocol": { "target_bedtime": "string", "target_wake_time": "string", "sleep_hours_target": number, "tips": ["string"] }
-}
-
-Workout days must match commitment_days_per_week (${commitmentDays}). Include 3-5 supplements, 4-6 habits, 3-4 sleep tips.`;
+  ${schemaFields.join(",\n  ")}${addOnAreas.length ? ",\n  \"suggested_addons\": [{ \"area\": \"string\", \"reason\": \"string\" }]" : ""}
+}`;
 }
 
 Deno.serve(async (req: Request) => {
@@ -206,7 +331,7 @@ Deno.serve(async (req: Request) => {
     // Fetch profile early — needed for both rate-limit bypass and prompt building
     const { data: profile } = await supabase
       .from("profiles")
-      .select("display_name, last_onboarded_at")
+      .select("display_name, last_onboarded_at, timezone")
       .eq("id", user.id)
       .maybeSingle();
 
@@ -269,23 +394,38 @@ Deno.serve(async (req: Request) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            // 6000 tokens ensures the full plan JSON is never truncated
-            generationConfig: { temperature: 0.7, maxOutputTokens: 6000 },
+            // 8192 is gemini-2.0-flash's actual max output; native JSON mode
+            // removes the need for markdown-fence stripping and reduces malformed output.
+            generationConfig: { temperature: 0.7, maxOutputTokens: 8192, responseMimeType: "application/json" },
           }),
           signal: AbortSignal.timeout(50000),
         }
       );
       const geminiData = await geminiRes.json();
 
-      // Surface Gemini API-level errors (bad key, quota exceeded, etc.)
+      // Surface Gemini API-level errors (bad key, quota exceeded, etc.) with
+      // user-friendly messages — the raw Gemini error text is verbose and technical.
       if (!geminiRes.ok || geminiData.error) {
+        const status = geminiData?.error?.status;
+        if (geminiRes.status === 429 || status === "RESOURCE_EXHAUSTED") {
+          console.error("Gemini quota exceeded:", geminiData?.error?.message);
+          throw new Error("Our AI service is temporarily at capacity. Please try again in a few minutes.");
+        }
         const msg = geminiData?.error?.message ?? `Gemini HTTP ${geminiRes.status}`;
-        throw new Error(`AI service error: ${msg}`);
+        console.error("Gemini API error:", msg);
+        throw new Error("AI service is temporarily unavailable. Please try again shortly.");
       }
 
       const candidate = geminiData?.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+
+      if (finishReason === "MAX_TOKENS") {
+        console.error("Gemini hit MAX_TOKENS before completing the plan");
+        throw new Error("Your plan was too elaborate for the AI to complete. Please try again — selecting fewer focus areas can help.");
+      }
+
       if (!candidate?.content) {
-        const reason = candidate?.finishReason ?? "no candidates returned";
+        const reason = finishReason ?? "no candidates returned";
         if (reason === "SAFETY") {
           throw new Error("AI declined to generate a plan due to content safety filters. Please review your profile for any terms that may be flagged.");
         }
@@ -294,14 +434,39 @@ Deno.serve(async (req: Request) => {
 
       const rawText: string = candidate.content.parts?.[0]?.text ?? "";
 
-      // Strip markdown code fences if present, then extract JSON
+      // With responseMimeType: "application/json", Gemini returns raw JSON without
+      // markdown fences — but strip them defensively in case that ever changes.
       const stripped = rawText.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/gi, "").trim();
       const jsonMatch = stripped.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         console.error("Gemini raw response (no JSON found):", rawText.slice(0, 500));
         throw new Error("AI response did not contain valid JSON. Please try again.");
       }
-      const parsed = JSON.parse(jsonMatch[0]);
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch (parseErr) {
+        console.error("Failed to parse Gemini JSON:", parseErr, "raw (truncated):", jsonMatch[0].slice(-300));
+        if (finishReason === "MAX_TOKENS" || jsonMatch[0].length >= 7000) {
+          throw new Error("Your plan was too elaborate for the AI to complete. Please try again — selecting fewer focus areas can help.");
+        }
+        throw new Error("AI returned malformed JSON. Please try again.");
+      }
+
+      // Normalize weekly_schedule day-name keys to lowercase — the LLM
+      // sometimes returns "Monday" or "MONDAY" and a case mismatch would
+      // silently break the schedule lookup in seedTodaysTasks.
+      if (parsed && typeof parsed === "object" && "weekly_schedule" in parsed) {
+        const ws = (parsed as Record<string, unknown>).weekly_schedule;
+        if (ws && typeof ws === "object") {
+          const normalized: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(ws as Record<string, unknown>)) {
+            normalized[key.toLowerCase()] = value;
+          }
+          (parsed as Record<string, unknown>).weekly_schedule = normalized;
+        }
+      }
 
       // Validate against Zod schema
       const validationResult = PlanDataSchema.safeParse(parsed);
@@ -313,8 +478,8 @@ Deno.serve(async (req: Request) => {
       planData = validationResult.data;
     } catch (aiErr) {
       console.error("Gemini AI error:", aiErr);
-      const msg = aiErr instanceof Error ? aiErr.message : "AI generation failed";
-      return new Response(JSON.stringify({ error: `Failed to generate plan: ${msg}. Please try again.` }), {
+      const msg = aiErr instanceof Error ? aiErr.message : "AI generation failed. Please try again.";
+      return new Response(JSON.stringify({ error: msg }), {
         status: 502, headers: { ...ch, "Content-Type": "application/json" },
       });
     }
@@ -346,7 +511,7 @@ Deno.serve(async (req: Request) => {
     if (saveError) throw saveError;
 
     // Seed today's daily tasks from the plan
-    await seedTodaysTasks(supabase, user.id, savedPlan.id, planData);
+    await seedTodaysTasks(supabase, user.id, savedPlan.id, planData, profile?.timezone || "Asia/Kolkata");
 
     return new Response(JSON.stringify({ plan: savedPlan }), {
       headers: { ...ch, "Content-Type": "application/json" },
@@ -363,10 +528,11 @@ async function seedTodaysTasks(
   supabase: ReturnType<typeof createClient>,
   userId: string,
   planId: string,
-  planData: Record<string, unknown>
+  planData: Record<string, unknown>,
+  timezone: string
 ) {
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  const dayName = new Date().toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Kolkata" }).toLowerCase();
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+  const dayName = new Date().toLocaleDateString("en-US", { weekday: "long", timeZone: timezone }).toLowerCase();
 
   // Delete existing tasks for today
   await supabase.from("daily_tasks").delete().eq("user_id", userId).eq("task_date", today);
@@ -383,7 +549,7 @@ async function seedTodaysTasks(
   }> = [];
   let orderIdx = 0;
 
-  const schedule = (planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }>)?.[dayName];
+  const schedule = (planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }> | undefined)?.[dayName];
 
   if (schedule) {
     if (schedule.is_rest_day) {
@@ -403,7 +569,7 @@ async function seedTodaysTasks(
     }
   }
 
-  const meals = planData.daily_meals as Record<string, { title: string; items: string[] }>;
+  const meals = planData.daily_meals as Record<string, { title: string; items: string[] }> | undefined;
   if (meals) {
     const mealOrder = ["breakfast", "mid_morning_snack", "lunch", "evening_snack", "dinner", "pre_sleep"];
     const mealLabels: Record<string, string> = {
@@ -426,7 +592,7 @@ async function seedTodaysTasks(
     }
   }
 
-  const supplements = planData.supplements as Array<{ name: string; dosage: string; timing: string; phase_start: number }>;
+  const supplements = planData.supplements as Array<{ name: string; dosage: string; timing: string; phase_start: number }> | undefined;
   if (supplements) {
     const phase1Supps = supplements.filter((s) => s.phase_start === 1).slice(0, 4);
     for (const s of phase1Supps) {
@@ -439,7 +605,7 @@ async function seedTodaysTasks(
     }
   }
 
-  const habits = planData.daily_habits as Array<{ title: string; description: string; timing: string }>;
+  const habits = planData.daily_habits as Array<{ title: string; description: string; timing: string }> | undefined;
   if (habits) {
     for (const h of habits.slice(0, 5)) {
       tasks.push({
@@ -451,7 +617,7 @@ async function seedTodaysTasks(
     }
   }
 
-  const sleep = planData.sleep_protocol as { target_bedtime: string; target_wake_time: string };
+  const sleep = planData.sleep_protocol as { target_bedtime: string; target_wake_time: string } | undefined;
   if (sleep) {
     tasks.push({
       user_id: userId, plan_id: planId, task_date: today,

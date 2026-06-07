@@ -81,9 +81,17 @@ const EMPTY_DATA: OnboardingData = {
 
 // ========== UTILITIES ==========
 
+function detectTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+  } catch {
+    return '';
+  }
+}
+
 function detectCountry(): string {
   try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+    const tz = detectTimezone();
     if (/Kolkata|Calcutta/.test(tz))                                       return 'India';
     if (/Karachi/.test(tz))                                                return 'Pakistan';
     if (/Dhaka/.test(tz))                                                  return 'Bangladesh';
@@ -1644,10 +1652,11 @@ export function OnboardingPage() {
       const storedModalities = (hp?.activity_modalities ?? []) as GoalModality[];
       const storedPath = prof?.onboarding_path ?? null;
 
-      // Reconstruct injuries and allergies from legacy injuries column
+      // Reconstruct plain injuries from legacy injuries column (physio areas are
+      // tracked separately in onboarding_details, allergies have their own column)
       const rawInjuries = (hp?.injuries ?? []) as string[];
-      const allergies = rawInjuries.filter(i => i.startsWith('allergy: ')).map(i => i.replace('allergy: ', ''));
-      const injuries = rawInjuries.filter(i => !i.startsWith('allergy: ') && !i.startsWith('physio: ')).join(', ');
+      const injuries = rawInjuries.filter(i => !i.startsWith('physio: ')).join(', ');
+      const allergies = (hp?.allergies ?? []) as string[];
 
       setData(prev => ({
         ...prev,
@@ -1701,10 +1710,11 @@ export function OnboardingPage() {
     const modalities = d.activity_modalities;
     const gd = d.goal_details;
 
+    const browserTimezone = detectTimezone();
+
     const injuriesArr = [
       ...(d.lifestyle_injuries ? d.lifestyle_injuries.split(',').map(s => s.trim()).filter(Boolean) : []),
       ...(gd.physio?.areas?.map(a => `physio: ${a}`) ?? []),
-      ...(gd.diet?.allergies?.map(a => `allergy: ${a}`) ?? []),
     ];
 
     await Promise.all([
@@ -1712,6 +1722,7 @@ export function OnboardingPage() {
         display_name: d.display_name.trim() || undefined,
         country: d.country || null,
         onboarding_path: d.onboarding_path,
+        ...(browserTimezone ? { timezone: browserTimezone } : {}),
       }).eq('id', user.id),
 
       supabase.from('health_profiles').upsert({
@@ -1726,6 +1737,7 @@ export function OnboardingPage() {
         diet_type: gd.diet?.diet_type || null,
         health_concerns: gd.concerns?.items ?? [],
         injuries: injuriesArr,
+        allergies: gd.diet?.allergies ?? [],
         medications: d.medications || null,
         food_preferences: gd.diet?.cuisine_style ?? [],
         food_dislikes: gd.diet?.food_dislikes ?? [],

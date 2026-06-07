@@ -7,13 +7,15 @@ export function formatDate(date: Date | string): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-export function today(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+export const DEFAULT_TIMEZONE = 'Asia/Kolkata';
+
+export function today(timezone: string = DEFAULT_TIMEZONE): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
 }
 
-export function getDayName(date: Date | string): string {
+export function getDayName(date: Date | string, timezone: string = DEFAULT_TIMEZONE): string {
   const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase() as string;
+  return d.toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone }).toLowerCase() as string;
 }
 
 export function calcBMI(weightKg: number, heightCm: number): number {

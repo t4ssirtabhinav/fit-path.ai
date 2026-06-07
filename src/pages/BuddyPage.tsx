@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Users, Copy, Check, UserPlus, Flame, TrendingUp, X, Award, Dumbbell, Zap, Moon, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { DEFAULT_TIMEZONE } from '../lib/utils';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import type { BuddyDetail, DailyTask, TaskLog } from '../types';
@@ -109,7 +110,9 @@ export function BuddyPage() {
   }
 
   async function loadBuddyDetail(buddyId: string) {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    // Use the buddy's own timezone — their tasks were seeded against their "today", not ours
+    const { data: buddyProfile } = await supabase.from('profiles').select('timezone').eq('id', buddyId).maybeSingle();
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: buddyProfile?.timezone || DEFAULT_TIMEZONE });
     const [tasksRes, logsRes] = await Promise.all([
       supabase.from('daily_tasks').select('*').eq('user_id', buddyId).eq('task_date', today).in('category', ['workout', 'habit', 'sleep']).order('order_index'),
       supabase.from('task_logs').select('*').eq('user_id', buddyId).eq('log_date', today),
@@ -151,7 +154,9 @@ export function BuddyPage() {
     if (reverseExisting) { setConnectError('You already have a pending or active connection with this person.'); setConnectLoading(false); return; }
     const { error } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetId });
     if (error) {
-      setConnectError('Could not send request. Please try again.');
+      setConnectError(error.code === '23505'
+        ? 'You already have a pending or active connection with this person.'
+        : 'Could not send request. Please try again.');
     } else {
       setInviteInput('');
       await loadData();

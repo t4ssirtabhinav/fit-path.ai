@@ -23,14 +23,20 @@ export interface PlanData {
   phase_name: string;
   phase_description: string;
   duration_months: number;
-  weekly_schedule: WeeklySchedule;
-  daily_meals: MealPlan;
-  supplements: Supplement[];
-  daily_habits: Habit[];
-  sleep_protocol: SleepProtocol;
+  weekly_schedule?: WeeklySchedule;
+  daily_meals?: MealPlan;
+  supplements?: Supplement[];
+  daily_habits?: Habit[];
+  sleep_protocol?: SleepProtocol;
+  suggested_addons?: SuggestedAddon[];
   personalized_notes: string;
   calorie_target: number;
   protein_target_g: number;
+}
+
+export interface SuggestedAddon {
+  area: string;
+  reason: string;
 }
 
 export interface WeeklySchedule {
@@ -86,8 +92,8 @@ export interface Supplement {
   timing: string;
   reason: string;
   phase_start: number;
-  indian_brand?: string;
-  approx_cost_inr?: string;
+  what_to_look_for?: string;
+  approx_cost_local?: string;
 }
 
 export interface Habit {

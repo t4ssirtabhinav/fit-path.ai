@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Dumbbell, Salad, Pill, Zap, Moon, ChevronDown, ChevronUp, RefreshCw, AlertCircle, Clock, Target } from 'lucide-react';
+import { Dumbbell, Salad, Pill, Zap, Moon, ChevronDown, ChevronUp, RefreshCw, AlertCircle, Clock, Target, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import type { PlanData, WorkoutSession, Supplement } from '../types';
+import { parsePlanData } from '../lib/planSchema';
 
 export function PlanPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [planData, setPlanData] = useState<PlanData | null>(null);
+  const [planDataInvalid, setPlanDataInvalid] = useState(false);
   const [planMeta, setPlanMeta] = useState<{ generated_at: string; last_regenerated_at: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['workout', 'meal']));
@@ -22,7 +24,9 @@ export function PlanPage() {
     if (!user) return;
     supabase.from('plans').select('plan_data, generated_at, last_regenerated_at').eq('user_id', user.id).eq('is_active', true).order('generated_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => {
       if (data) {
-        setPlanData(data.plan_data as unknown as PlanData);
+        const parsed = parsePlanData(data.plan_data);
+        setPlanData(parsed);
+        setPlanDataInvalid(!parsed);
         setPlanMeta({ generated_at: data.generated_at, last_regenerated_at: data.last_regenerated_at });
         // Calculate cooldown
         const lastRegen = data.last_regenerated_at ? new Date(data.last_regenerated_at) : new Date(data.generated_at);
@@ -63,7 +67,9 @@ export function PlanPage() {
     if (!res.ok) {
       setRegenError(result.error || 'Failed to regenerate');
     } else {
-      setPlanData(result.plan.plan_data as unknown as PlanData);
+      const parsed = parsePlanData(result.plan.plan_data);
+      setPlanData(parsed);
+      setPlanDataInvalid(!parsed);
       setRegenCooldownDays(30);
       setRegenError('');
     }
@@ -73,6 +79,15 @@ export function PlanPage() {
   if (loading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="flex items-center gap-3 text-gray-400"><RefreshCw className="w-5 h-5 animate-spin" />Loading plan...</div>
+    </div>
+  );
+
+  if (planDataInvalid) return (
+    <div className="max-w-2xl mx-auto py-16 text-center">
+      <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+      <p className="text-white font-semibold mb-2">Your plan couldn't be loaded</p>
+      <p className="text-gray-500 text-sm mb-6">It looks like your plan data is in an unexpected format. Try regenerating your plan.</p>
+      <Button onClick={() => navigate('/onboarding')}>Go to onboarding</Button>
     </div>
   );
 
@@ -126,6 +141,7 @@ export function PlanPage() {
       )}
 
       {/* Weekly schedule */}
+      {planData.weekly_schedule && (
       <Card>
         <CardHeader>
           <button className="w-full flex items-center justify-between" onClick={() => toggle('workout')}>
@@ -188,8 +204,10 @@ export function PlanPage() {
           </CardContent>
         )}
       </Card>
+      )}
 
       {/* Meals */}
+      {planData.daily_meals && (
       <Card>
         <CardHeader>
           <button className="w-full flex items-center justify-between" onClick={() => toggle('meal')}>
@@ -226,8 +244,10 @@ export function PlanPage() {
           </CardContent>
         )}
       </Card>
+      )}
 
       {/* Supplements */}
+      {planData.supplements && planData.supplements.length > 0 && (
       <Card>
         <CardHeader>
           <button className="w-full flex items-center justify-between" onClick={() => toggle('supplement')}>
@@ -249,20 +269,22 @@ export function PlanPage() {
                     <p className="text-sm font-medium text-white">{s.name}</p>
                     <p className="text-xs text-amber-400/80 mt-0.5">{s.dosage} - {s.timing}</p>
                     <p className="text-xs text-gray-500 mt-1">{s.reason}</p>
-                    {s.indian_brand && <p className="text-xs text-gray-600 mt-1">Brand: {s.indian_brand}</p>}
+                    {s.what_to_look_for && <p className="text-xs text-gray-600 mt-1">What to look for: {s.what_to_look_for}</p>}
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${s.phase_start === 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-700 text-gray-400'}`}>
                     Phase {s.phase_start}+
                   </span>
                 </div>
-                {s.approx_cost_inr && <p className="text-xs text-gray-600 mt-1">{s.approx_cost_inr}</p>}
+                {s.approx_cost_local && <p className="text-xs text-gray-600 mt-1">{s.approx_cost_local}</p>}
               </div>
             ))}
           </CardContent>
         )}
       </Card>
+      )}
 
       {/* Habits */}
+      {planData.daily_habits && planData.daily_habits.length > 0 && (
       <Card>
         <CardHeader>
           <button className="w-full flex items-center justify-between" onClick={() => toggle('habits')}>
@@ -291,8 +313,10 @@ export function PlanPage() {
           </CardContent>
         )}
       </Card>
+      )}
 
       {/* Sleep */}
+      {planData.sleep_protocol && (
       <Card>
         <CardHeader>
           <button className="w-full flex items-center justify-between" onClick={() => toggle('sleep')}>
@@ -331,6 +355,30 @@ export function PlanPage() {
           </CardContent>
         )}
       </Card>
+      )}
+
+      {/* Suggested add-ons — areas the user didn't opt into but could benefit from */}
+      {planData.suggested_addons && planData.suggested_addons.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-lg bg-fuchsia-400/10 flex items-center justify-center">
+                <Sparkles className="w-4 h-4 text-fuchsia-400" />
+              </span>
+              <h2 className="text-sm font-semibold text-white">Consider Adding</h2>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-2">
+            <p className="text-xs text-gray-500 mb-1">You didn't include these in your regime — here's why they could help:</p>
+            {planData.suggested_addons.map((addon, i) => (
+              <div key={i} className="bg-gray-800/50 rounded-xl p-3">
+                <p className="text-sm font-medium text-white">{addon.area}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{addon.reason}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Regenerate */}
       <div className="border border-gray-800 rounded-2xl p-4">
