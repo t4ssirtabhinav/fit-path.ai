@@ -388,7 +388,7 @@ Deno.serve(async (req: Request) => {
 
     try {
       const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -396,7 +396,7 @@ Deno.serve(async (req: Request) => {
             contents: [{ parts: [{ text: prompt }] }],
             // 8192 keeps us within budget for an elaborate structured plan; native JSON mode
             // removes the need for markdown-fence stripping and reduces malformed output.
-            generationConfig: { temperature: 0.7, maxOutputTokens: 8192, responseMimeType: "application/json" },
+            generationConfig: { temperature: 0.7, maxOutputTokens: 8192, responseMimeType: "application/json", thinkingConfig: { thinkingLevel: "low" } },
           }),
           signal: AbortSignal.timeout(50000),
         }
