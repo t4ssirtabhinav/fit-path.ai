@@ -85,7 +85,7 @@ export function ProfilePage() {
     { label: 'Gender', value: hp.gender ?? '—' },
     { label: 'Activity level', value: hp.activity_level?.replace(/_/g, ' ') ?? '—' },
     { label: 'Diet type', value: hp.diet_type?.replace(/_/g, ' ') ?? '—' },
-    { label: 'Gym days/week', value: hp.commitment_days_per_week ? `${hp.commitment_days_per_week} days` : '—' },
+    { label: 'Active days/week', value: hp.commitment_days_per_week ? `${hp.commitment_days_per_week} days` : '—' },
     { label: 'Current sleep', value: hp.sleep_hours_current ? `${hp.sleep_hours_current}h` : '—' },
   ] : [];
 

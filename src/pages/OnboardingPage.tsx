@@ -28,7 +28,7 @@ const GOAL_MODALITIES: { id: GoalModality; label: string; description: string; i
   { id: 'cardio',      label: 'Walking / Running / Cardio',   description: 'Endurance, heart health, and calorie burn',            icon: '🏃' },
   { id: 'home',        label: 'Home Workout',                 description: 'Effective training with no gym required',              icon: '🏠' },
   { id: 'physio',      label: 'Physiotherapy & Recovery',     description: 'Injury recovery, pain management, and mobility',      icon: '🩹' },
-  { id: 'diet',        label: 'Diet & Nutrition',             description: 'Personalised meal plan with Indian ingredients',       icon: '🥗' },
+  { id: 'diet',        label: 'Diet & Nutrition',             description: 'Personalised meal plan using ingredients available where you live',       icon: '🥗' },
   { id: 'supplements', label: 'Supplements',                  description: 'Targeted supplements for your goals and budget',      icon: '💊' },
   { id: 'concerns',    label: 'Other Health Concerns',        description: 'PCOS, thyroid, BP, immunity, hair, skin & more',      icon: '➕', tag: 'Add-on' },
 ];
@@ -56,6 +56,99 @@ const COUNTRIES = [
 ];
 
 const MODALITY_ORDER: GoalModality[] = ['gym', 'yoga', 'cardio', 'home', 'physio', 'diet', 'supplements', 'concerns'];
+
+const SOUTH_ASIA_COUNTRIES = ['India', 'Pakistan', 'Bangladesh', 'Sri Lanka', 'Nepal'];
+const MIDDLE_EAST_COUNTRIES = ['UAE', 'Qatar', 'Kuwait', 'Saudi Arabia', 'Bahrain', 'Oman'];
+const SOUTHEAST_ASIA_COUNTRIES = ['Singapore', 'Malaysia'];
+
+const COMMON_CUISINE_OPTIONS = [
+  { id: 'continental',  label: 'Continental / Western' },
+  { id: 'high_protein', label: 'High-protein snacks' },
+  { id: 'quick_prep',   label: 'Quick / low-effort meals' },
+];
+
+function getCuisineOptions(country: string): { id: string; label: string }[] {
+  if (SOUTH_ASIA_COUNTRIES.includes(country)) {
+    return [
+      { id: 'north_indian',    label: 'North Indian' },
+      { id: 'south_indian',    label: 'South Indian' },
+      { id: 'bengali',         label: 'Bengali / East Indian' },
+      { id: 'gujarati',        label: 'Gujarati / Rajasthani' },
+      { id: 'maharashtrian',   label: 'Maharashtrian' },
+      ...COMMON_CUISINE_OPTIONS,
+    ];
+  }
+  if (MIDDLE_EAST_COUNTRIES.includes(country)) {
+    return [
+      { id: 'levantine',   label: 'Levantine (Lebanese, Syrian)' },
+      { id: 'gulf',        label: 'Gulf / Khaleeji' },
+      { id: 'egyptian',    label: 'Egyptian / North African' },
+      { id: 'south_asian', label: 'South Asian' },
+      ...COMMON_CUISINE_OPTIONS,
+    ];
+  }
+  if (SOUTHEAST_ASIA_COUNTRIES.includes(country)) {
+    return [
+      { id: 'malay',   label: 'Malay' },
+      { id: 'chinese', label: 'Chinese' },
+      { id: 'indian',  label: 'Indian' },
+      { id: 'thai',    label: 'Thai / Southeast Asian' },
+      ...COMMON_CUISINE_OPTIONS,
+    ];
+  }
+  return [
+    { id: 'mediterranean', label: 'Mediterranean' },
+    { id: 'asian',         label: 'Asian-inspired' },
+    { id: 'latin',         label: 'Latin American' },
+    ...COMMON_CUISINE_OPTIONS,
+  ];
+}
+
+const CURRENCY_INFO: Record<string, { symbol: string; tiers: [number, number, number] }> = {
+  'India':          { symbol: '₹',   tiers: [500, 1500, 3000] },
+  'United States':  { symbol: '$',   tiers: [20, 50, 100] },
+  'United Kingdom': { symbol: '£',   tiers: [15, 40, 80] },
+  'Canada':         { symbol: 'C$',  tiers: [25, 65, 130] },
+  'Australia':      { symbol: 'A$',  tiers: [30, 75, 150] },
+  'UAE':            { symbol: 'AED', tiers: [75, 200, 400] },
+  'Singapore':      { symbol: 'S$',  tiers: [25, 70, 140] },
+  'New Zealand':    { symbol: 'NZ$', tiers: [30, 80, 160] },
+  'Pakistan':       { symbol: '₨',   tiers: [3000, 8000, 15000] },
+  'Bangladesh':     { symbol: '৳',   tiers: [2000, 5000, 10000] },
+  'Sri Lanka':      { symbol: 'Rs',  tiers: [4000, 10000, 20000] },
+  'Nepal':          { symbol: 'Rs',  tiers: [3000, 8000, 15000] },
+  'Germany':        { symbol: '€',   tiers: [20, 50, 100] },
+  'Netherlands':    { symbol: '€',   tiers: [20, 50, 100] },
+  'France':         { symbol: '€',   tiers: [20, 50, 100] },
+  'Italy':          { symbol: '€',   tiers: [20, 50, 100] },
+  'Spain':          { symbol: '€',   tiers: [20, 50, 100] },
+  'Switzerland':    { symbol: 'CHF', tiers: [25, 60, 120] },
+  'Sweden':         { symbol: 'kr',  tiers: [200, 500, 1000] },
+  'Norway':         { symbol: 'kr',  tiers: [200, 500, 1000] },
+  'Qatar':          { symbol: 'QR',  tiers: [75, 200, 400] },
+  'Kuwait':         { symbol: 'KD',  tiers: [7, 18, 35] },
+  'Saudi Arabia':   { symbol: 'SR',  tiers: [75, 200, 400] },
+  'Bahrain':        { symbol: 'BD',  tiers: [7, 18, 35] },
+  'Oman':           { symbol: 'OMR', tiers: [7, 18, 35] },
+  'Malaysia':       { symbol: 'RM',  tiers: [80, 220, 450] },
+  'South Africa':   { symbol: 'R',   tiers: [350, 900, 1800] },
+  'Kenya':          { symbol: 'KSh', tiers: [2500, 6500, 13000] },
+  'Nigeria':        { symbol: '₦',   tiers: [8000, 20000, 40000] },
+  'Ireland':        { symbol: '€',   tiers: [20, 50, 100] },
+};
+
+const DEFAULT_CURRENCY: { symbol: string; tiers: [number, number, number] } = { symbol: '$', tiers: [20, 50, 100] };
+
+function getSupplementBudgetOptions(country: string): { value: string; label: string }[] {
+  const { symbol, tiers } = CURRENCY_INFO[country] ?? DEFAULT_CURRENCY;
+  const [t1, t2, t3] = tiers;
+  return [
+    { value: 'under_500', label: `Under ${symbol}${t1.toLocaleString()}` },
+    { value: '500_1500',  label: `${symbol}${t1.toLocaleString()}–${symbol}${t2.toLocaleString()}` },
+    { value: '1500_3000', label: `${symbol}${t2.toLocaleString()}–${symbol}${t3.toLocaleString()}` },
+    { value: 'no_limit',  label: 'No strict limit' },
+  ];
+}
 
 const EMPTY_DATA: OnboardingData = {
   display_name: '',
@@ -1011,7 +1104,7 @@ function StepGoalDiet({ data, set }: { data: OnboardingData; set: <K extends key
 
   return (
     <div className="space-y-5">
-      <StepHeader title="Diet & Nutrition" subtitle="Your meal plan uses real Indian ingredients and your exact preferences — not generic advice." />
+      <StepHeader title="Diet & Nutrition" subtitle={`Your meal plan uses ${data.country ? `real ${data.country} ingredients` : 'ingredients available where you live'} and your exact preferences — not generic advice.`} />
       <div>
         <FieldLabel>Your diet type</FieldLabel>
         <RadioCards
@@ -1063,16 +1156,7 @@ function StepGoalDiet({ data, set }: { data: OnboardingData; set: <K extends key
         <MultiSelectChips
           selected={g.cuisine_style ?? []}
           onChange={v => upd({ cuisine_style: v })}
-          options={[
-            { id: 'north_indian',    label: 'North Indian' },
-            { id: 'south_indian',    label: 'South Indian' },
-            { id: 'bengali',         label: 'Bengali / East Indian' },
-            { id: 'gujarati',        label: 'Gujarati / Rajasthani' },
-            { id: 'maharashtrian',   label: 'Maharashtrian' },
-            { id: 'continental',     label: 'Continental / Western' },
-            { id: 'high_protein',    label: 'High-protein snacks' },
-            { id: 'quick_prep',      label: 'Quick / low-effort meals' },
-          ]}
+          options={getCuisineOptions(data.country)}
         />
       </div>
       <TagInput
@@ -1101,7 +1185,7 @@ function StepGoalSupplements({ data, set }: { data: OnboardingData; set: <K exte
 
   return (
     <div className="space-y-5">
-      <StepHeader title="Supplements" subtitle="We recommend only what you actually need — nothing unnecessary, all India-available brands." />
+      <StepHeader title="Supplements" subtitle="We recommend only what you actually need — nothing unnecessary, all available in your region." />
       <div>
         <FieldLabel>Supplements you currently take <span className="text-xs text-gray-500 font-normal">— select all that apply</span></FieldLabel>
         <MultiSelectChips
@@ -1142,12 +1226,7 @@ function StepGoalSupplements({ data, set }: { data: OnboardingData; set: <K exte
         <RadioCards
           value={g.budget ?? ''}
           onChange={v => upd({ budget: v })}
-          options={[
-            { value: 'under_500',   label: 'Under ₹500' },
-            { value: '500_1500',    label: '₹500–₹1,500' },
-            { value: '1500_3000',   label: '₹1,500–₹3,000' },
-            { value: 'no_limit',    label: 'No strict limit' },
-          ]}
+          options={getSupplementBudgetOptions(data.country)}
         />
       </div>
       <div>
@@ -1732,7 +1811,10 @@ export function OnboardingPage() {
         height_cm: d.height_cm || null,
         gender: d.gender || null,
         body_type: derivedBodyType(d.weight_kg, d.height_cm),
-        activity_level: derivedActivityLevel(d.job_type),
+        // job_type and per-modality details are only collected on the 'plan' path —
+        // for 'track' users, leave these null rather than defaulting to misleading values
+        // (e.g. "sedentary" or "3 days/week" that the user never actually entered).
+        activity_level: d.onboarding_path === 'track' ? null : derivedActivityLevel(d.job_type),
         fitness_goals: derivedFitnessGoals(modalities, gd),
         diet_type: gd.diet?.diet_type || null,
         health_concerns: gd.concerns?.items ?? [],
@@ -1742,7 +1824,7 @@ export function OnboardingPage() {
         food_preferences: gd.diet?.cuisine_style ?? [],
         food_dislikes: gd.diet?.food_dislikes ?? [],
         sleep_hours_current: d.sleep_hours_current,
-        commitment_days_per_week: derivedCommitmentDays(modalities, gd),
+        commitment_days_per_week: d.onboarding_path === 'track' ? null : derivedCommitmentDays(modalities, gd),
         preferred_workout_time: d.preferred_workout_time || null,
         goal_timeline_months: d.goal_timeline_months || null,
         personalization_comments: sanitizeComment(d.personalization_comments),
