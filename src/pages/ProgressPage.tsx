@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { TrendingDown, TrendingUp, Scale, Ruler, Calendar, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
+import { DailyLogRepository } from '../repositories/DailyLogRepository';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, addDays } from 'date-fns';
 import type { DailyLog } from '../types';
 
@@ -74,11 +74,11 @@ export function ProgressPage() {
 
   async function loadDateData() {
     if (!user) return;
-    const [logRes, tasksData] = await Promise.all([
-      supabase.from('daily_logs').select('*').eq('user_id', user.id).eq('log_date', selectedDate).maybeSingle(),
+    const [log, tasksData] = await Promise.all([
+      DailyLogRepository.getForDate(user.id, selectedDate),
       DailyTaskRepository.getForDate(user.id, selectedDate),
     ]);
-    setDateLog(logRes.data);
+    setDateLog(log);
 
     if (tasksData.length > 0) {
       const logsData = await DailyTaskRepository.getLogsForDate(user.id, selectedDate);
