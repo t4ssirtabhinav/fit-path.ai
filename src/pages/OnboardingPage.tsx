@@ -15,6 +15,9 @@ import { COUNTRIES } from '../config/countries/countries';
 import { getCuisineOptions } from '../config/countries/cuisines';
 import { getSupplementBudgetOptions } from '../config/countries/currencies';
 import { detectTimezone, detectCountry } from '../config/countries/timezone-detect';
+import { ProfileRepository } from '../repositories/ProfileRepository';
+import { HealthProfileRepository } from '../repositories/HealthProfileRepository';
+import type { Json } from '../types/database';
 
 // ========== STEP TYPES ==========
 
@@ -1577,9 +1580,9 @@ export function OnboardingPage() {
   useEffect(() => {
     if (!user) { setPrefilling(false); return; }
     async function load() {
-      const [{ data: hp }, { data: prof }, { data: tc }] = await Promise.all([
-        supabase.from('health_profiles').select('*').eq('user_id', user!.id).maybeSingle(),
-        supabase.from('profiles').select('display_name, country, onboarding_path').eq('id', user!.id).maybeSingle(),
+      const [hp, prof, { data: tc }] = await Promise.all([
+        HealthProfileRepository.getForUser(user!.id),
+        ProfileRepository.getForUser(user!.id),
         supabase.from('tracking_config').select('*').eq('user_id', user!.id).maybeSingle(),
       ]);
 
@@ -1655,15 +1658,14 @@ export function OnboardingPage() {
     ];
 
     await Promise.all([
-      supabase.from('profiles').update({
+      ProfileRepository.update(user.id, {
         display_name: d.display_name.trim() || undefined,
         country: d.country || null,
         onboarding_path: d.onboarding_path,
         ...(browserTimezone ? { timezone: browserTimezone } : {}),
-      }).eq('id', user.id),
+      }),
 
-      supabase.from('health_profiles').upsert({
-        user_id: user.id,
+      HealthProfileRepository.upsert(user.id, {
         age: d.age || null,
         weight_kg: d.weight_kg || null,
         height_cm: d.height_cm || null,
@@ -1687,11 +1689,11 @@ export function OnboardingPage() {
         goal_timeline_months: d.goal_timeline_months || null,
         personalization_comments: sanitizeComment(d.personalization_comments),
         activity_modalities: modalities,
-        onboarding_details: gd,
+        onboarding_details: gd as unknown as Json,
         stress_level: d.stress_level || null,
         hydration_level: d.hydration_level || null,
         job_type: d.job_type || null,
-      }, { onConflict: 'user_id' }),
+      }),
     ]);
   }
 
@@ -1724,7 +1726,7 @@ export function OnboardingPage() {
       await saveDraft(data);
       // Stamp onboarding time — edge function uses this to bypass the 30-day
       // rate limit when an existing user re-onboards and requests a fresh plan.
-      await supabase.from('profiles').update({ last_onboarded_at: new Date().toISOString() }).eq('id', user!.id);
+      await ProfileRepository.update(user!.id, { last_onboarded_at: new Date().toISOString() });
       navigate('/generate-plan');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
@@ -1748,7 +1750,7 @@ export function OnboardingPage() {
         reminder_style: data.tracking_config.reminder_style,
       }, { onConflict: 'user_id' });
       // Mark onboarding complete for tracking users
-      await supabase.from('profiles').update({ onboarding_complete: true }).eq('id', user!.id);
+      await ProfileRepository.update(user!.id, { onboarding_complete: true });
       await refreshProfile();
       navigate('/dashboard');
     } catch (e: unknown) {
