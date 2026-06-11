@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
+import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, addDays } from 'date-fns';
 import type { DailyLog } from '../types';
 
@@ -43,13 +44,13 @@ export function ProgressPage() {
     const monthStart = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
     const monthEnd = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
-    const [measRes, tasksData, logsData] = await Promise.all([
-      supabase.from('body_measurements').select('measured_at, weight_kg, waist_cm').eq('user_id', user.id).gte('measured_at', thirtyDaysAgo).order('measured_at'),
+    const [measurements, tasksData, logsData] = await Promise.all([
+      BodyMeasurementRepository.getSince(user.id, thirtyDaysAgo),
       DailyTaskRepository.getDatesInRange(user.id, monthStart, monthEnd),
       DailyTaskRepository.getLogsInRange(user.id, monthStart, monthEnd),
     ]);
 
-    setMeasurements((measRes.data ?? []) as Measurement[]);
+    setMeasurements(measurements as Measurement[]);
 
     const tasksByDate = new Map<string, number>();
     for (const t of tasksData) {

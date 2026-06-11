@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { PlanRepository } from '../repositories/PlanRepository';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { StreakRepository } from '../repositories/StreakRepository';
+import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
 import { today, DEFAULT_TIMEZONE } from '../lib/utils';
 import { parsePlanData } from '../lib/planSchema';
 import { Button } from '../components/ui/Button';
@@ -236,7 +237,7 @@ export function DashboardPage() {
   async function saveMeasurement() {
     if (!user || (!weight && !waist)) return;
     setSavingMeasurement(true);
-    await supabase.from('body_measurements').insert({
+    await BodyMeasurementRepository.create({
       user_id: user.id,
       measured_at: todayDate,
       weight_kg: weight ? Number(weight) : null,
