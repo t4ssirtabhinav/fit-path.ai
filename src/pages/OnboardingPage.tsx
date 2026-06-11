@@ -11,17 +11,15 @@ import { MultiSelectChips } from '../components/onboarding/MultiSelectChips';
 import { RadioCards } from '../components/onboarding/RadioCards';
 import { ButtonGrid } from '../components/onboarding/ButtonGrid';
 import { StressPicker } from '../components/onboarding/StressPicker';
-import { TagInput } from '../components/onboarding/TagInput';
 import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/StepGoalModality';
 import { MODALITY_REGISTRY } from '../config/modalities/registry';
 import type {
   GoalModality, GoalDetails,
-  DietDetails, SupplementDetails, ConcernsDetails,
+  SupplementDetails, ConcernsDetails,
   OnboardingData, OnboardingTrackingConfig,
 } from '../types';
 import { TRACKERS } from '../config/trackers';
 import { COUNTRIES } from '../config/countries/countries';
-import { getCuisineOptions } from '../config/countries/cuisines';
 import { getSupplementBudgetOptions } from '../config/countries/currencies';
 import { detectTimezone, detectCountry } from '../config/countries/timezone-detect';
 import { ProfileRepository } from '../repositories/ProfileRepository';
@@ -380,87 +378,6 @@ function setGoalDetail<M extends keyof GoalDetails>(
     ...goalDetails,
     [modality]: { ...(goalDetails[modality] ?? {}), ...partial } as GoalDetails[M],
   });
-}
-
-function StepGoalDiet({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.diet ?? {} as Partial<DietDetails>;
-  const upd = (partial: Partial<DietDetails>) => setGoalDetail(set, data.goal_details, 'diet', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Diet & Nutrition" subtitle={`Your meal plan uses ${data.country ? `real ${data.country} ingredients` : 'ingredients available where you live'} and your exact preferences — not generic advice.`} />
-      <div>
-        <FieldLabel>Your diet type</FieldLabel>
-        <RadioCards
-          value={g.diet_type ?? ''}
-          onChange={v => upd({ diet_type: v })}
-          options={[
-            { value: 'veg',                        label: 'Vegetarian (no eggs, no meat)' },
-            { value: 'veg_eggs',                   label: 'Vegetarian + Eggs' },
-            { value: 'veg_eggs_occasional_chicken', label: 'Veg + Eggs + Occasional chicken' },
-            { value: 'non_veg',                    label: 'Non-vegetarian (all foods)' },
-            { value: 'jain',                       label: 'Jain (no root vegetables)' },
-            { value: 'sattvic',                    label: 'Sattvic (no onion / garlic / meat)' },
-            { value: 'vegan',                      label: 'Vegan' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Main dietary goal</FieldLabel>
-        <RadioCards
-          value={g.dietary_goal ?? ''}
-          onChange={v => upd({ dietary_goal: v })}
-          options={[
-            { value: 'lose_weight',           label: 'Lose weight' },
-            { value: 'gain_weight',           label: 'Gain weight / build muscle' },
-            { value: 'general',               label: 'Maintain weight, improve quality' },
-            { value: 'condition_management',  label: 'Manage a health condition' },
-          ]}
-        />
-      </div>
-      {g.dietary_goal === 'condition_management' && (
-        <div>
-          <FieldLabel>Which condition(s)?</FieldLabel>
-          <MultiSelectChips
-            selected={g.conditions ?? []}
-            onChange={v => upd({ conditions: v })}
-            options={[
-              { id: 'diabetes',    label: 'Diabetes / blood sugar' },
-              { id: 'pcos',        label: 'PCOS / hormonal' },
-              { id: 'thyroid',     label: 'Thyroid' },
-              { id: 'high_bp',     label: 'High blood pressure' },
-              { id: 'cholesterol', label: 'High cholesterol' },
-              { id: 'ibs',         label: 'IBS / digestive issues' },
-            ]}
-          />
-        </div>
-      )}
-      <div>
-        <FieldLabel>Cuisine style <span className="text-xs text-gray-500 font-normal">— select all you enjoy</span></FieldLabel>
-        <MultiSelectChips
-          selected={g.cuisine_style ?? []}
-          onChange={v => upd({ cuisine_style: v })}
-          options={getCuisineOptions(data.country)}
-        />
-      </div>
-      <TagInput
-        label="Food allergies"
-        tags={g.allergies ?? []}
-        onChange={v => upd({ allergies: v })}
-        placeholder="e.g. peanuts, lactose, gluten"
-        hint="Press Enter or comma after each item"
-        optional
-      />
-      <TagInput
-        label="Foods you strongly dislike"
-        tags={g.food_dislikes ?? []}
-        onChange={v => upd({ food_dislikes: v })}
-        placeholder="e.g. broccoli, mushrooms"
-        hint="Press Enter or comma after each item"
-        optional
-      />
-    </div>
-  );
 }
 
 function StepGoalSupplements({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
@@ -933,12 +850,8 @@ function validateStep(stepId: StepId, data: OnboardingData): string | null {
       return validateModalityFields('home', data);
     case 'goal_physio':
       return validateModalityFields('physio', data);
-    case 'goal_diet': {
-      const g = data.goal_details.diet;
-      if (!g?.diet_type)                     return 'Please select your diet type.';
-      if (!g?.dietary_goal)                  return 'Please select your main dietary goal.';
-      return null;
-    }
+    case 'goal_diet':
+      return validateModalityFields('diet', data);
     case 'goal_supplements': {
       const g = data.goal_details.supplements;
       if (!g?.goals?.length)                 return 'Please select at least one supplement goal.';
@@ -1193,7 +1106,7 @@ export function OnboardingPage() {
       case 'goal_cardio':       return <StepGoalModality modality="cardio" data={data} set={set} />;
       case 'goal_home':         return <StepGoalModality modality="home" data={data} set={set} />;
       case 'goal_physio':       return <StepGoalModality modality="physio" data={data} set={set} />;
-      case 'goal_diet':         return <StepGoalDiet data={data} set={set} />;
+      case 'goal_diet':         return <StepGoalModality modality="diet" data={data} set={set} />;
       case 'goal_supplements':  return <StepGoalSupplements data={data} set={set} />;
       case 'goal_concerns':     return <StepGoalConcerns data={data} set={set} />;
       case 'lifestyle':         return <StepLifestyle data={data} set={set} />;

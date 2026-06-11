@@ -19,6 +19,7 @@ export function buildFieldRenderCtx(data: OnboardingData): FieldRenderCtx {
     weight_kg: data.weight_kg,
     height_cm: data.height_cm,
     bmi,
+    country: data.country,
     activityModalities: data.activity_modalities,
     goalDetails: data.goal_details,
   };
@@ -81,6 +82,7 @@ export function StepGoalModality({ modality, data, set }: { modality: GoalModali
               label={field.label}
               optional={field.optional}
               hint={helperText}
+              placeholder={field.placeholder}
               tags={(rawValue as string[]) ?? []}
               onChange={v => update(field, v)}
             />

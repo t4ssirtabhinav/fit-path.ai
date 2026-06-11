@@ -15,6 +15,7 @@ export interface FieldRenderCtx {
   weight_kg: number;
   height_cm: number;
   bmi: number;
+  country: string;
   activityModalities: GoalModality[];
   goalDetails: GoalDetails;
 }
@@ -38,6 +39,8 @@ export interface ModalityFieldDef<TDetails> {
   required?: boolean | ((ctx: FieldRenderCtx) => boolean);
   requiredMessage?: string;
   helperText?: string | ((ctx: FieldRenderCtx) => string | undefined);
+  /** Placeholder text, for 'tags'. */
+  placeholder?: string;
   /** When set to 'number', values from radio/buttongrid/etc are coerced with Number() before storing. */
   valueType?: 'string' | 'number';
 }

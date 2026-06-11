@@ -5,6 +5,7 @@ import { yogaModality } from './yoga';
 import { cardioModality } from './cardio';
 import { homeModality } from './home';
 import { physioModality } from './physio';
+import { dietModality } from './diet';
 
 // Populated incrementally as each modality is migrated (Phase 2, steps 2c-2j).
 // Once complete, GOAL_MODALITIES/MODALITY_ORDER in OnboardingPage.tsx will be
@@ -15,4 +16,5 @@ export const MODALITY_REGISTRY: Partial<Record<GoalModality, ModalityDefinition<
   cardio: cardioModality,
   home: homeModality,
   physio: physioModality,
+  diet: dietModality,
 };
