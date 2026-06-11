@@ -5,7 +5,7 @@ import { MODALITY_PROMPT_INFO } from './shared';
 
 export const homeModality: ModalityDefinition<HomeDetails> = {
   ...MODALITY_PROMPT_INFO.home,
-  description: 'Bodyweight and equipment-light training at home',
+  description: 'Effective training with no gym required',
   icon: '🏠',
   stepHeader: {
     title: 'Home Workout',

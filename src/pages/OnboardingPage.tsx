@@ -11,7 +11,7 @@ import { RadioCards } from '../components/onboarding/RadioCards';
 import { ButtonGrid } from '../components/onboarding/ButtonGrid';
 import { StressPicker } from '../components/onboarding/StressPicker';
 import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/StepGoalModality';
-import { MODALITY_REGISTRY } from '../config/modalities/registry';
+import { MODALITY_REGISTRY, MODALITY_ORDER, GOAL_MODALITIES } from '../config/modalities/registry';
 import type {
   GoalModality, GoalDetails,
   OnboardingData, OnboardingTrackingConfig,
@@ -34,19 +34,6 @@ type StepId =
   | 'track_setup' | 'track_confirm';
 
 // ========== CONSTANTS ==========
-
-const GOAL_MODALITIES: { id: GoalModality; label: string; description: string; icon: string; tag?: string }[] = [
-  { id: 'gym',         label: 'Gym Workout',                  description: 'Structured training with weights and machines',         icon: '🏋️' },
-  { id: 'yoga',        label: 'Yoga',                         description: 'Flexibility, mindfulness, and mind-body connection',    icon: '🧘' },
-  { id: 'cardio',      label: 'Walking / Running / Cardio',   description: 'Endurance, heart health, and calorie burn',            icon: '🏃' },
-  { id: 'home',        label: 'Home Workout',                 description: 'Effective training with no gym required',              icon: '🏠' },
-  { id: 'physio',      label: 'Physiotherapy & Recovery',     description: 'Injury recovery, pain management, and mobility',      icon: '🩹' },
-  { id: 'diet',        label: 'Diet & Nutrition',             description: 'Personalised meal plan using ingredients available where you live',       icon: '🥗' },
-  { id: 'supplements', label: 'Supplements',                  description: 'Targeted supplements for your goals and budget',      icon: '💊' },
-  { id: 'concerns',    label: 'Other Health Concerns',        description: 'PCOS, thyroid, BP, immunity, hair, skin & more',      icon: '➕', tag: 'Add-on' },
-];
-
-const MODALITY_ORDER: GoalModality[] = ['gym', 'yoga', 'cardio', 'home', 'physio', 'diet', 'supplements', 'concerns'];
 
 const EMPTY_DATA: OnboardingData = {
   display_name: '',
@@ -667,7 +654,6 @@ function StepTrackConfirm({ data, loading }: { data: OnboardingData; loading: bo
 
 function validateModalityFields(modality: GoalModality, data: OnboardingData): string | null {
   const definition = MODALITY_REGISTRY[modality];
-  if (!definition) return null;
   const ctx = buildFieldRenderCtx(data);
   const details = (data.goal_details[modality] ?? {}) as Record<string, unknown>;
   for (const field of definition.uiFields) {

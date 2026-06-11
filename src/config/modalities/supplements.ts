@@ -6,7 +6,7 @@ import { getSupplementBudgetOptions } from '../countries/currencies';
 
 export const supplementsModality: ModalityDefinition<SupplementDetails> = {
   ...MODALITY_PROMPT_INFO.supplements,
-  description: 'Targeted, region-available supplement guidance',
+  description: 'Targeted supplements for your goals and budget',
   icon: '💊',
   stepHeader: {
     title: 'Supplements',

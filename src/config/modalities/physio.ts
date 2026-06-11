@@ -5,7 +5,7 @@ import { MODALITY_PROMPT_INFO } from './shared';
 
 export const physioModality: ModalityDefinition<PhysioDetails> = {
   ...MODALITY_PROMPT_INFO.physio,
-  description: 'Gentle, guided recovery and mobility work',
+  description: 'Injury recovery, pain management, and mobility',
   icon: '🩹',
   disclaimer: "FitPath's recovery guidance is informational only and not a substitute for professional medical advice. Always follow your healthcare provider's instructions.",
   stepHeader: {

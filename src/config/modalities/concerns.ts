@@ -22,8 +22,9 @@ const ALL_CONCERNS = [
 
 export const concernsModality: ModalityDefinition<ConcernsDetails> = {
   ...MODALITY_PROMPT_INFO.concerns,
-  description: 'Address other health concerns through nutrition and lifestyle',
-  icon: '🩺',
+  description: 'PCOS, thyroid, BP, immunity, hair, skin & more',
+  icon: '➕',
+  tag: 'Add-on',
   stepHeader: {
     title: 'Other Health Concerns',
     subtitle: 'These get woven into your plan as targeted nutrition, habit, and lifestyle adjustments — not a separate programme.',

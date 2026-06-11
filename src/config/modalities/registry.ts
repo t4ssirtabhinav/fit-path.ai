@@ -1,5 +1,5 @@
 import type { GoalModality } from '../../types';
-import type { ModalityDefinition } from './types';
+import type { FieldRenderCtx, ModalityDefinition } from './types';
 import { gymModality } from './gym';
 import { yogaModality } from './yoga';
 import { cardioModality } from './cardio';
@@ -9,10 +9,7 @@ import { dietModality } from './diet';
 import { supplementsModality } from './supplements';
 import { concernsModality } from './concerns';
 
-// Populated incrementally as each modality is migrated (Phase 2, steps 2c-2j).
-// Once complete, GOAL_MODALITIES/MODALITY_ORDER in OnboardingPage.tsx will be
-// derived from this registry (step 2k).
-export const MODALITY_REGISTRY: Partial<Record<GoalModality, ModalityDefinition<any>>> = {
+export const MODALITY_REGISTRY: Record<GoalModality, ModalityDefinition<any>> = {
   gym: gymModality,
   yoga: yogaModality,
   cardio: cardioModality,
@@ -22,3 +19,16 @@ export const MODALITY_REGISTRY: Partial<Record<GoalModality, ModalityDefinition<
   supplements: supplementsModality,
   concerns: concernsModality,
 };
+
+export const MODALITY_ORDER: GoalModality[] = ['gym', 'yoga', 'cardio', 'home', 'physio', 'diet', 'supplements', 'concerns'];
+
+const DEFAULT_CTX: FieldRenderCtx = {
+  age: 0, gender: '', weight_kg: 0, height_cm: 0, bmi: 0, country: '', activityModalities: [], goalDetails: {},
+};
+
+export const GOAL_MODALITIES: { id: GoalModality; label: string; description: string; icon: string; tag?: string }[] =
+  MODALITY_ORDER.map(id => {
+    const def = MODALITY_REGISTRY[id];
+    const header = typeof def.stepHeader === 'function' ? def.stepHeader(DEFAULT_CTX) : def.stepHeader;
+    return { id, label: header.title, description: def.description, icon: def.icon, tag: def.tag };
+  });

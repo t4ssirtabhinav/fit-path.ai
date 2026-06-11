@@ -6,7 +6,7 @@ import { getCuisineOptions } from '../countries/cuisines';
 
 export const dietModality: ModalityDefinition<DietDetails> = {
   ...MODALITY_PROMPT_INFO.diet,
-  description: 'Personalized meal planning and nutrition guidance',
+  description: 'Personalised meal plan using ingredients available where you live',
   icon: '🥗',
   stepHeader: ctx => ({
     title: 'Diet & Nutrition',

@@ -39,8 +39,6 @@ function setGoalDetail<M extends keyof GoalDetails>(
 
 export function StepGoalModality({ modality, data, set }: { modality: GoalModality; data: OnboardingData; set: SetFn }) {
   const definition = MODALITY_REGISTRY[modality];
-  if (!definition) return null;
-
   const ctx = buildFieldRenderCtx(data);
   const details = (data.goal_details[modality] ?? {}) as Record<string, unknown>;
   const header = typeof definition.stepHeader === 'function' ? definition.stepHeader(ctx) : definition.stepHeader;
