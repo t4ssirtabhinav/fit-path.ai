@@ -16,7 +16,7 @@ import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/
 import { MODALITY_REGISTRY } from '../config/modalities/registry';
 import type {
   GoalModality, GoalDetails,
-  HomeDetails, PhysioDetails, DietDetails, SupplementDetails, ConcernsDetails,
+  PhysioDetails, DietDetails, SupplementDetails, ConcernsDetails,
   OnboardingData, OnboardingTrackingConfig,
 } from '../types';
 import { TRACKERS } from '../config/trackers';
@@ -380,71 +380,6 @@ function setGoalDetail<M extends keyof GoalDetails>(
     ...goalDetails,
     [modality]: { ...(goalDetails[modality] ?? {}), ...partial } as GoalDetails[M],
   });
-}
-
-function StepGoalHome({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const hasGym = data.activity_modalities.includes('gym');
-  const g = data.goal_details.home ?? {} as Partial<HomeDetails>;
-  const upd = (partial: Partial<HomeDetails>) => setGoalDetail(set, data.goal_details, 'home', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Home Workout" subtitle="Your plan is built entirely around what you have available — no gym required." />
-      <div>
-        <FieldLabel>Equipment you have at home</FieldLabel>
-        <MultiSelectChips
-          selected={g.equipment ?? []}
-          onChange={v => upd({ equipment: v })}
-          options={[
-            { id: 'none',             label: 'None (bodyweight only)' },
-            { id: 'resistance_bands', label: 'Resistance bands' },
-            { id: 'dumbbells',        label: 'Dumbbells' },
-            { id: 'pullup_bar',       label: 'Pull-up bar' },
-            { id: 'kettlebell',       label: 'Kettlebell' },
-            { id: 'yoga_mat',         label: 'Yoga mat' },
-            { id: 'jump_rope',        label: 'Jump rope' },
-          ]}
-        />
-      </div>
-      {/* Skip fitness_level and focus if gym is also selected — already captured */}
-      {!hasGym && (
-        <>
-          <div>
-            <FieldLabel>Your fitness level</FieldLabel>
-            <RadioCards
-              value={g.fitness_level ?? ''}
-              onChange={v => upd({ fitness_level: v })}
-              options={[
-                { value: 'beginner',     label: 'Beginner',     description: 'New to structured training' },
-                { value: 'intermediate', label: 'Intermediate', description: '6+ months of consistent exercise' },
-                { value: 'advanced',     label: 'Advanced',     description: '2+ years of regular training' },
-              ]}
-            />
-          </div>
-          <div>
-            <FieldLabel>Primary focus <span className="text-xs text-gray-500 font-normal">— up to 2</span></FieldLabel>
-            <MultiSelectChips
-              max={2}
-              selected={g.primary_focus ?? []}
-              onChange={v => upd({ primary_focus: v })}
-              options={[
-                { id: 'build_muscle',        label: 'Build muscle' },
-                { id: 'lose_fat',            label: 'Lose fat' },
-                { id: 'improve_strength',    label: 'Get stronger' },
-                { id: 'improve_flexibility', label: 'Improve flexibility' },
-                { id: 'prepare_long_term',   label: 'General fitness' },
-              ]}
-            />
-          </div>
-        </>
-      )}
-      {hasGym && (
-        <p className="text-xs text-gray-500 bg-gray-800/50 rounded-xl px-4 py-3">
-          Fitness level and focus are already captured from your Gym Workout answers.
-        </p>
-      )}
-    </div>
-  );
 }
 
 function StepGoalPhysio({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
@@ -1071,13 +1006,8 @@ function validateStep(stepId: StepId, data: OnboardingData): string | null {
       return validateModalityFields('yoga', data);
     case 'goal_cardio':
       return validateModalityFields('cardio', data);
-    case 'goal_home': {
-      const g = data.goal_details.home;
-      const hasGym = data.activity_modalities.includes('gym');
-      if (!hasGym && !g?.fitness_level)      return 'Please select your current fitness level.';
-      if (!hasGym && !g?.primary_focus?.length) return 'Please select at least one focus area.';
-      return null;
-    }
+    case 'goal_home':
+      return validateModalityFields('home', data);
     case 'goal_physio': {
       const g = data.goal_details.physio;
       if (!g?.reason)                        return 'Please tell us why you selected physiotherapy & recovery.';
@@ -1343,7 +1273,7 @@ export function OnboardingPage() {
       case 'goal_gym':          return <StepGoalModality modality="gym" data={data} set={set} />;
       case 'goal_yoga':         return <StepGoalModality modality="yoga" data={data} set={set} />;
       case 'goal_cardio':       return <StepGoalModality modality="cardio" data={data} set={set} />;
-      case 'goal_home':         return <StepGoalHome data={data} set={set} />;
+      case 'goal_home':         return <StepGoalModality modality="home" data={data} set={set} />;
       case 'goal_physio':       return <StepGoalPhysio data={data} set={set} />;
       case 'goal_diet':         return <StepGoalDiet data={data} set={set} />;
       case 'goal_supplements':  return <StepGoalSupplements data={data} set={set} />;

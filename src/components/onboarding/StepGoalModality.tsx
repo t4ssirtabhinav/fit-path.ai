@@ -59,6 +59,14 @@ export function StepGoalModality({ modality, data, set }: { modality: GoalModali
         const cols = typeof field.cols === 'function' ? field.cols(ctx) : field.cols;
         const rawValue = details[field.key];
 
+        if (field.kind === 'info') {
+          return (
+            <p key={field.key} className="text-xs text-gray-500 bg-gray-800/50 rounded-xl px-4 py-3">
+              {field.label}
+            </p>
+          );
+        }
+
         if (field.kind === 'tags') {
           return (
             <TagInput

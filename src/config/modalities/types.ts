@@ -19,10 +19,11 @@ export interface FieldRenderCtx {
   goalDetails: GoalDetails;
 }
 
-export type ModalityFieldKind = 'radio' | 'multiselect' | 'buttongrid' | 'tags' | 'stresspicker';
+export type ModalityFieldKind = 'radio' | 'multiselect' | 'buttongrid' | 'tags' | 'stresspicker' | 'info';
 
 export interface ModalityFieldDef<TDetails> {
-  key: keyof TDetails & string;
+  /** For 'info' fields (which store no value), any unique string id. */
+  key: (keyof TDetails & string) | (string & {});
   kind: ModalityFieldKind;
   label: string;
   /** Extra inline note rendered next to the label (e.g. "— pick up to 3"). */
