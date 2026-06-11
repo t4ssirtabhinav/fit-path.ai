@@ -7,7 +7,6 @@ import { Input, Select } from '../components/ui/Input';
 import { ProgressBar } from '../components/onboarding/ProgressBar';
 import { StepHeader } from '../components/onboarding/StepHeader';
 import { FieldLabel } from '../components/onboarding/FieldLabel';
-import { MultiSelectChips } from '../components/onboarding/MultiSelectChips';
 import { RadioCards } from '../components/onboarding/RadioCards';
 import { ButtonGrid } from '../components/onboarding/ButtonGrid';
 import { StressPicker } from '../components/onboarding/StressPicker';
@@ -15,7 +14,6 @@ import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/
 import { MODALITY_REGISTRY } from '../config/modalities/registry';
 import type {
   GoalModality, GoalDetails,
-  ConcernsDetails,
   OnboardingData, OnboardingTrackingConfig,
 } from '../types';
 import { TRACKERS } from '../config/trackers';
@@ -360,77 +358,6 @@ function StepGoalSelection({ data, set }: { data: OnboardingData; set: <K extend
             </button>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-// --- Per-modality detail steps ---
-
-function setGoalDetail<M extends keyof GoalDetails>(
-  set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void,
-  goalDetails: GoalDetails,
-  modality: M,
-  partial: Partial<NonNullable<GoalDetails[M]>>
-) {
-  set('goal_details', {
-    ...goalDetails,
-    [modality]: { ...(goalDetails[modality] ?? {}), ...partial } as GoalDetails[M],
-  });
-}
-
-function StepGoalConcerns({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const { age, gender } = data;
-  const g = data.goal_details.concerns ?? {} as Partial<ConcernsDetails>;
-  const upd = (partial: Partial<ConcernsDetails>) => setGoalDetail(set, data.goal_details, 'concerns', partial);
-
-  const allConcerns = [
-    { id: 'Stress / anxiety',            label: 'Stress / anxiety' },
-    { id: 'Sleep quality',               label: 'Sleep quality' },
-    { id: 'Hair fall / thinning',         label: 'Hair fall / thinning' },
-    { id: 'Skin concerns',               label: 'Skin concerns / acne' },
-    { id: 'PCOS / hormonal imbalance',   label: 'PCOS / hormonal imbalance' },
-    { id: 'Thyroid',                     label: 'Thyroid (hypo/hyper)' },
-    { id: 'Diabetes risk / blood sugar', label: 'Diabetes risk / blood sugar' },
-    { id: 'High blood pressure',         label: 'High blood pressure' },
-    { id: 'High cholesterol',            label: 'High cholesterol' },
-    { id: 'Digestive issues',            label: 'Digestive issues / acidity' },
-    { id: 'Low immunity',                label: 'Low immunity / frequent illness' },
-    { id: 'Chronic fatigue / low energy',label: 'Chronic fatigue / low energy' },
-    { id: 'Posture & back pain',         label: 'Posture & back pain' },
-    { id: 'Menstrual health',            label: 'Menstrual health' },
-  ];
-
-  // Re-order based on context
-  const sorted = [...allConcerns].sort((a) => {
-    if (gender === 'female' && (a.id === 'PCOS / hormonal imbalance' || a.id === 'Menstrual health')) return -1;
-    if (age > 45 && (a.id === 'High blood pressure' || a.id === 'Diabetes risk / blood sugar' || a.id === 'High cholesterol')) return -1;
-    if (age < 25 && (a.id === 'Skin concerns' || a.id === 'Hair fall / thinning')) return -1;
-    return 0;
-  });
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Other Health Concerns" subtitle="These get woven into your plan as targeted nutrition, habit, and lifestyle adjustments — not a separate programme." />
-      <div>
-        <FieldLabel>Your concerns</FieldLabel>
-        <MultiSelectChips
-          selected={g.items ?? []}
-          onChange={v => upd({ items: v })}
-          options={sorted}
-        />
-      </div>
-      <div>
-        <FieldLabel>Are you currently on medication for any of these?</FieldLabel>
-        <RadioCards
-          value={g.on_medication ?? ''}
-          onChange={v => upd({ on_medication: v })}
-          options={[
-            { value: 'yes_some',      label: 'Yes, for some of them' },
-            { value: 'no',            label: 'No' },
-            { value: 'prefer_not_say',label: 'Prefer not to say' },
-          ]}
-        />
       </div>
     </div>
   );
@@ -787,10 +714,8 @@ function validateStep(stepId: StepId, data: OnboardingData): string | null {
       return validateModalityFields('diet', data);
     case 'goal_supplements':
       return validateModalityFields('supplements', data);
-    case 'goal_concerns': {
-      const g = data.goal_details.concerns;
-      return g?.items?.length ? null : 'Please select at least one health concern.';
-    }
+    case 'goal_concerns':
+      return validateModalityFields('concerns', data);
     case 'lifestyle': {
       if (!data.job_type)                    return 'Please tell us what your typical day looks like.';
       const hasWorkout = data.activity_modalities.some(m => ['gym', 'home', 'cardio', 'yoga'].includes(m));
@@ -1037,7 +962,7 @@ export function OnboardingPage() {
       case 'goal_physio':       return <StepGoalModality modality="physio" data={data} set={set} />;
       case 'goal_diet':         return <StepGoalModality modality="diet" data={data} set={set} />;
       case 'goal_supplements':  return <StepGoalModality modality="supplements" data={data} set={set} />;
-      case 'goal_concerns':     return <StepGoalConcerns data={data} set={set} />;
+      case 'goal_concerns':     return <StepGoalModality modality="concerns" data={data} set={set} />;
       case 'lifestyle':         return <StepLifestyle data={data} set={set} />;
       case 'plan_confirm':      return <StepPlanConfirm data={data} set={set} loading={loading} />;
       case 'track_setup':       return <StepTrackSetup data={data} set={set} />;
