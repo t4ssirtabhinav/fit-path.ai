@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { TrendingDown, TrendingUp, Scale, Ruler, Calendar, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,7 +17,7 @@ export function ProgressPage() {
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [activity, setActivity] = useState<DayActivity[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // Historical date view
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -191,7 +191,7 @@ export function ProgressPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
               <XAxis dataKey="week" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
-              <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#fff' }} formatter={(v: number) => [`${v}%`, 'Completion']} />
+              <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#fff' }} formatter={(v: number | string | readonly (number | string)[] | undefined) => [`${Array.isArray(v) ? v[0] : (v ?? 0)}%`, 'Completion']} />
               <Bar dataKey="completion" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

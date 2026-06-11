@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Users, Copy, Check, UserPlus, Flame, TrendingUp, X, Award, Dumbbell, Zap, Moon, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Users, Copy, Check, UserPlus, Flame, X, Award, Dumbbell, Zap, Moon, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { DEFAULT_TIMEZONE } from '../lib/utils';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
@@ -13,7 +13,6 @@ import type { BuddyDetail, DailyTask, TaskLog } from '../types';
 
 export function BuddyPage() {
   const { user, profile } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const selectedBuddyId = searchParams.get('buddyId');
 

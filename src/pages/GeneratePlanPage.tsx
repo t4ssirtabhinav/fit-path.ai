@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -30,6 +30,7 @@ export function GeneratePlanPage() {
   useEffect(() => {
     if (!user || hasStartedRef.current) return;
     hasStartedRef.current = true;
+    const userId = user.id;
 
     // Advance through steps every 3s, then pulse the last one until done
     const interval = setInterval(() => {
@@ -68,7 +69,7 @@ export function GeneratePlanPage() {
         setError(result.error || 'Failed to generate plan. Please try again.');
       } else {
         // Mark onboarding complete only after plan is successfully generated
-        await supabase.from('profiles').update({ onboarding_complete: true }).eq('id', user.id);
+        await supabase.from('profiles').update({ onboarding_complete: true }).eq('id', userId);
         await refreshProfile();
         setCurrentStep(STEPS.length - 1);
         setDone(true);

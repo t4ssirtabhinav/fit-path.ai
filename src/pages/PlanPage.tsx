@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dumbbell, Salad, Pill, Zap, Moon, ChevronDown, ChevronUp, RefreshCw, AlertCircle, Clock, Target, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import type { WorkoutSession, Supplement } from '../types';
+import type { WorkoutSession, Supplement, Meal } from '../types';
 import { usePlan } from '../hooks/usePlan';
 
 export function PlanPage() {
@@ -195,7 +195,7 @@ export function PlanPage() {
         </CardHeader>
         {expandedSections.has('meal') && (
           <CardContent className="pt-0 space-y-3">
-            {planData.daily_meals && Object.entries(planData.daily_meals).map(([key, meal]) => (
+            {planData.daily_meals && (Object.entries(planData.daily_meals) as [string, Meal][]).map(([key, meal]) => (
               <div key={key} className="bg-gray-800/50 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-white capitalize">{key.replace(/_/g, ' ')}</p>

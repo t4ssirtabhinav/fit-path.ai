@@ -1,5 +1,4 @@
-import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Dumbbell, TrendingUp, Users, User, Dumbbell as Logo } from 'lucide-react';
 import { cn } from '../../lib/utils';
 

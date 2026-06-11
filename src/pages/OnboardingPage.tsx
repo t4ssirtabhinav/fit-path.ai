@@ -14,7 +14,7 @@ import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/
 import { MODALITY_REGISTRY, MODALITY_ORDER, GOAL_MODALITIES } from '../config/modalities/registry';
 import type {
   GoalModality, GoalDetails,
-  OnboardingData, OnboardingTrackingConfig,
+  OnboardingData,
 } from '../types';
 import { TRACKERS } from '../config/trackers';
 import { COUNTRIES } from '../config/countries/countries';
@@ -452,7 +452,7 @@ function StepLifestyle({ data, set }: { data: OnboardingData; set: <K extends ke
   );
 }
 
-function StepPlanConfirm({ data, set, loading }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void; loading: boolean }) {
+function StepPlanConfirm({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
   const mods = data.activity_modalities;
   const bmi = data.height_cm > 0 ? (data.weight_kg / ((data.height_cm / 100) ** 2)).toFixed(1) : '—';
 
@@ -620,7 +620,7 @@ function StepTrackSetup({ data, set }: { data: OnboardingData; set: <K extends k
   );
 }
 
-function StepTrackConfirm({ data, loading }: { data: OnboardingData; loading: boolean }) {
+function StepTrackConfirm({ data }: { data: OnboardingData }) {
   const selected = TRACKERS.filter(t => data.tracking_config.selected_trackers.includes(t.id));
   return (
     <div className="space-y-5">
@@ -950,14 +950,13 @@ export function OnboardingPage() {
       case 'goal_supplements':  return <StepGoalModality modality="supplements" data={data} set={set} />;
       case 'goal_concerns':     return <StepGoalModality modality="concerns" data={data} set={set} />;
       case 'lifestyle':         return <StepLifestyle data={data} set={set} />;
-      case 'plan_confirm':      return <StepPlanConfirm data={data} set={set} loading={loading} />;
+      case 'plan_confirm':      return <StepPlanConfirm data={data} set={set} />;
       case 'track_setup':       return <StepTrackSetup data={data} set={set} />;
-      case 'track_confirm':     return <StepTrackConfirm data={data} loading={loading} />;
+      case 'track_confirm':     return <StepTrackConfirm data={data} />;
       default:                  return null;
     }
   }
 
-  const isLastStep = stepIndex === stepSequence.length - 1;
   const isPlanConfirm = currentStep === 'plan_confirm';
   const isTrackConfirm = currentStep === 'track_confirm';
 

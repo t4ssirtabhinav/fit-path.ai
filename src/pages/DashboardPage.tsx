@@ -1,10 +1,10 @@
-﻿import React, { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   Flame, Dumbbell, Salad, Pill, CheckCircle2, Circle, Coffee,
-  Moon, Zap, ChevronRight, RefreshCw, BedDouble, Target, TrendingUp, Users,
-  Info, X, MessageSquare, ChevronLeft
+  Moon, Zap, ChevronRight, RefreshCw, BedDouble, Target, TrendingUp,
+  Info, X, MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { PlanRepository } from '../repositories/PlanRepository';
