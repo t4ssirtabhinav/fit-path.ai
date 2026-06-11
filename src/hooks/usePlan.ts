@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PlanRepository } from '../repositories/PlanRepository';
-import { parsePlanData } from '../lib/planSchema';
+import { PlanService } from '../services/PlanService';
 import type { PlanData } from '../types';
 
 export interface PlanMeta {
@@ -21,18 +20,25 @@ export function usePlan(userId: string | undefined) {
     }
     let cancelled = false;
     setLoading(true);
-    PlanRepository.getActivePlan(userId).then(data => {
+    PlanService.getActivePlan(userId).then(result => {
       if (cancelled) return;
-      if (data) {
-        const parsed = parsePlanData(data.plan_data);
-        setPlanData(parsed);
-        setPlanDataInvalid(!parsed);
-        setPlanMeta({ generated_at: data.generated_at, last_regenerated_at: data.last_regenerated_at });
+      if (result.status === 'ok') {
+        setPlanData(result.data);
+        setPlanDataInvalid(false);
+        setPlanMeta({ generated_at: result.plan.generated_at, last_regenerated_at: result.plan.last_regenerated_at });
+      } else if (result.status === 'invalid') {
+        setPlanDataInvalid(true);
       }
       setLoading(false);
     });
     return () => { cancelled = true; };
   }, [userId]);
 
-  return { planData, planDataInvalid, planMeta, loading, setPlanData, setPlanDataInvalid, setPlanMeta };
+  async function regenerate() {
+    const data = await PlanService.regeneratePlan();
+    setPlanData(data);
+    setPlanDataInvalid(false);
+  }
+
+  return { planData, planDataInvalid, planMeta, loading, setPlanData, setPlanDataInvalid, setPlanMeta, regenerate };
 }

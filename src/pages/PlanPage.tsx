@@ -1,18 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dumbbell, Salad, Pill, Zap, Moon, ChevronDown, ChevronUp, RefreshCw, AlertCircle, Clock, Target, Sparkles } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import type { WorkoutSession, Supplement } from '../types';
-import { parsePlanData } from '../lib/planSchema';
 import { usePlan } from '../hooks/usePlan';
 
 export function PlanPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { planData, planDataInvalid, planMeta, loading, setPlanData, setPlanDataInvalid } = usePlan(user?.id);
+  const { planData, planDataInvalid, planMeta, loading, regenerate: regeneratePlan } = usePlan(user?.id);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['workout', 'meal']));
   const [regenLoading, setRegenLoading] = useState(false);
   const [regenError, setRegenError] = useState('');
@@ -41,25 +39,12 @@ export function PlanPage() {
     }
     setRegenLoading(true);
     setRegenError('');
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-plan`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session?.access_token}`,
-        'Content-Type': 'application/json',
-        Apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify({ regenerate: true }),
-    });
-    const result = await res.json();
-    if (!res.ok) {
-      setRegenError(result.error || 'Failed to regenerate');
-    } else {
-      const parsed = parsePlanData(result.plan.plan_data);
-      setPlanData(parsed);
-      setPlanDataInvalid(!parsed);
+    try {
+      await regeneratePlan();
       setRegenCooldownDays(30);
       setRegenError('');
+    } catch (err) {
+      setRegenError(err instanceof Error ? err.message : 'Failed to regenerate');
     }
     setRegenLoading(false);
   }
