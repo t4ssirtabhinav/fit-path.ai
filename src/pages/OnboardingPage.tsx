@@ -15,12 +15,11 @@ import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/
 import { MODALITY_REGISTRY } from '../config/modalities/registry';
 import type {
   GoalModality, GoalDetails,
-  SupplementDetails, ConcernsDetails,
+  ConcernsDetails,
   OnboardingData, OnboardingTrackingConfig,
 } from '../types';
 import { TRACKERS } from '../config/trackers';
 import { COUNTRIES } from '../config/countries/countries';
-import { getSupplementBudgetOptions } from '../config/countries/currencies';
 import { detectTimezone, detectCountry } from '../config/countries/timezone-detect';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { HealthProfileRepository } from '../repositories/HealthProfileRepository';
@@ -378,72 +377,6 @@ function setGoalDetail<M extends keyof GoalDetails>(
     ...goalDetails,
     [modality]: { ...(goalDetails[modality] ?? {}), ...partial } as GoalDetails[M],
   });
-}
-
-function StepGoalSupplements({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.supplements ?? {} as Partial<SupplementDetails>;
-  const upd = (partial: Partial<SupplementDetails>) => setGoalDetail(set, data.goal_details, 'supplements', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Supplements" subtitle="We recommend only what you actually need — nothing unnecessary, all available in your region." />
-      <div>
-        <FieldLabel>Supplements you currently take <span className="text-xs text-gray-500 font-normal">— select all that apply</span></FieldLabel>
-        <MultiSelectChips
-          selected={g.current ?? []}
-          onChange={v => upd({ current: v })}
-          options={[
-            { id: 'protein_powder', label: 'Protein powder' },
-            { id: 'creatine',       label: 'Creatine' },
-            { id: 'multivitamin',   label: 'Multivitamin' },
-            { id: 'omega3',         label: 'Omega-3' },
-            { id: 'vitamin_d',      label: 'Vitamin D' },
-            { id: 'iron',           label: 'Iron' },
-            { id: 'b12',            label: 'B12' },
-            { id: 'pre_workout',    label: 'Pre-workout' },
-            { id: 'nothing',        label: 'Nothing currently' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>What do you want supplements to help with? <span className="text-xs text-gray-500 font-normal">— up to 3</span></FieldLabel>
-        <MultiSelectChips
-          max={3}
-          selected={g.goals ?? []}
-          onChange={v => upd({ goals: v })}
-          options={[
-            { id: 'fill_gaps',       label: 'Fill nutritional gaps' },
-            { id: 'muscle_growth',   label: 'Muscle growth' },
-            { id: 'energy',          label: 'Energy & performance' },
-            { id: 'hair_skin',       label: 'Hair, skin & nails' },
-            { id: 'immunity',        label: 'Immunity' },
-            { id: 'hormonal',        label: 'Hormonal support (PCOS/thyroid)' },
-            { id: 'recovery',        label: 'Recovery & joint health' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Monthly supplement budget</FieldLabel>
-        <RadioCards
-          value={g.budget ?? ''}
-          onChange={v => upd({ budget: v })}
-          options={getSupplementBudgetOptions(data.country)}
-        />
-      </div>
-      <div>
-        <FieldLabel>Preference for vegetarian-certified supplements</FieldLabel>
-        <ButtonGrid
-          cols={2}
-          value={g.veg_preferred ? 'yes' : (g.veg_preferred === false ? 'no' : '')}
-          onChange={v => upd({ veg_preferred: v === 'yes' })}
-          options={[
-            { value: 'yes', label: 'Yes, strictly veg' },
-            { value: 'no',  label: 'No preference' },
-          ]}
-        />
-      </div>
-    </div>
-  );
 }
 
 function StepGoalConcerns({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
@@ -852,12 +785,8 @@ function validateStep(stepId: StepId, data: OnboardingData): string | null {
       return validateModalityFields('physio', data);
     case 'goal_diet':
       return validateModalityFields('diet', data);
-    case 'goal_supplements': {
-      const g = data.goal_details.supplements;
-      if (!g?.goals?.length)                 return 'Please select at least one supplement goal.';
-      if (!g?.budget)                        return 'Please select your monthly supplement budget.';
-      return null;
-    }
+    case 'goal_supplements':
+      return validateModalityFields('supplements', data);
     case 'goal_concerns': {
       const g = data.goal_details.concerns;
       return g?.items?.length ? null : 'Please select at least one health concern.';
@@ -1107,7 +1036,7 @@ export function OnboardingPage() {
       case 'goal_home':         return <StepGoalModality modality="home" data={data} set={set} />;
       case 'goal_physio':       return <StepGoalModality modality="physio" data={data} set={set} />;
       case 'goal_diet':         return <StepGoalModality modality="diet" data={data} set={set} />;
-      case 'goal_supplements':  return <StepGoalSupplements data={data} set={set} />;
+      case 'goal_supplements':  return <StepGoalModality modality="supplements" data={data} set={set} />;
       case 'goal_concerns':     return <StepGoalConcerns data={data} set={set} />;
       case 'lifestyle':         return <StepLifestyle data={data} set={set} />;
       case 'plan_confirm':      return <StepPlanConfirm data={data} set={set} loading={loading} />;

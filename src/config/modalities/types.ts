@@ -41,8 +41,11 @@ export interface ModalityFieldDef<TDetails> {
   helperText?: string | ((ctx: FieldRenderCtx) => string | undefined);
   /** Placeholder text, for 'tags'. */
   placeholder?: string;
-  /** When set to 'number', values from radio/buttongrid/etc are coerced with Number() before storing. */
-  valueType?: 'string' | 'number';
+  /**
+   * When set to 'number', values from radio/buttongrid/etc are coerced with Number() before storing.
+   * When set to 'boolean', values are stored/read as 'yes'/'no' <-> true/false (for buttongrid).
+   */
+  valueType?: 'string' | 'number' | 'boolean';
 }
 
 export interface ModalityDefinition<TDetails> extends PromptModalityInfo {

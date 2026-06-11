@@ -45,7 +45,7 @@ export function StepGoalModality({ modality, data, set }: { modality: GoalModali
   const details = (data.goal_details[modality] ?? {}) as Record<string, unknown>;
   const header = typeof definition.stepHeader === 'function' ? definition.stepHeader(ctx) : definition.stepHeader;
 
-  function update(field: ModalityFieldDef<unknown>, value: string | string[] | number) {
+  function update(field: ModalityFieldDef<unknown>, value: string | string[] | number | boolean) {
     setGoalDetail(set, data.goal_details, modality, { [field.key]: value } as Partial<NonNullable<GoalDetails[typeof modality]>>);
   }
 
@@ -112,8 +112,12 @@ export function StepGoalModality({ modality, data, set }: { modality: GoalModali
             )}
             {field.kind === 'buttongrid' && (
               <ButtonGrid
-                value={(rawValue as string | number) ?? (field.valueType === 'number' ? 0 : '')}
-                onChange={v => update(field, field.valueType === 'number' ? Number(v) : v)}
+                value={
+                  field.valueType === 'boolean'
+                    ? (rawValue === true ? 'yes' : rawValue === false ? 'no' : '')
+                    : (rawValue as string | number) ?? (field.valueType === 'number' ? 0 : '')
+                }
+                onChange={v => update(field, field.valueType === 'number' ? Number(v) : field.valueType === 'boolean' ? v === 'yes' : v)}
                 options={options}
                 cols={cols}
               />
