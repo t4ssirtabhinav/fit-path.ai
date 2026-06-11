@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Dumbbell, Sparkles, X, ClipboardList } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
@@ -17,6 +16,7 @@ import { getSupplementBudgetOptions } from '../config/countries/currencies';
 import { detectTimezone, detectCountry } from '../config/countries/timezone-detect';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { HealthProfileRepository } from '../repositories/HealthProfileRepository';
+import { TrackingConfigRepository } from '../repositories/TrackingConfigRepository';
 import type { Json } from '../types/database';
 
 // ========== STEP TYPES ==========
@@ -1580,10 +1580,10 @@ export function OnboardingPage() {
   useEffect(() => {
     if (!user) { setPrefilling(false); return; }
     async function load() {
-      const [hp, prof, { data: tc }] = await Promise.all([
+      const [hp, prof, tc] = await Promise.all([
         HealthProfileRepository.getForUser(user!.id),
         ProfileRepository.getForUser(user!.id),
-        supabase.from('tracking_config').select('*').eq('user_id', user!.id).maybeSingle(),
+        TrackingConfigRepository.getForUser(user!.id),
       ]);
 
       if (!hp && !prof) { setPrefilling(false); return; }
@@ -1742,13 +1742,12 @@ export function OnboardingPage() {
     try {
       await saveDraft(data);
       // Save tracking config
-      await supabase.from('tracking_config').upsert({
-        user_id: user!.id,
+      await TrackingConfigRepository.upsert(user!.id, {
         selected_trackers: data.tracking_config.selected_trackers,
         reminder_morning: data.tracking_config.reminder_morning || null,
         reminder_evening: data.tracking_config.reminder_evening || null,
         reminder_style: data.tracking_config.reminder_style,
-      }, { onConflict: 'user_id' });
+      });
       // Mark onboarding complete for tracking users
       await ProfileRepository.update(user!.id, { onboarding_complete: true });
       await refreshProfile();
