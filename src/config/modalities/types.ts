@@ -46,6 +46,8 @@ export interface ModalityDefinition<TDetails> extends PromptModalityInfo {
   description: string;
   icon: string;
   tag?: string;
+  /** Optional banner (e.g. medical disclaimer) rendered above the step header. */
+  disclaimer?: string;
   stepHeader: { title: string; subtitle: string } | ((ctx: FieldRenderCtx) => { title: string; subtitle: string });
   schema: z.ZodType<TDetails>;
   uiFields: ModalityFieldDef<TDetails>[];

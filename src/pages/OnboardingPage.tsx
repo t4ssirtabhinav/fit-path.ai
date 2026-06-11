@@ -16,7 +16,7 @@ import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/
 import { MODALITY_REGISTRY } from '../config/modalities/registry';
 import type {
   GoalModality, GoalDetails,
-  PhysioDetails, DietDetails, SupplementDetails, ConcernsDetails,
+  DietDetails, SupplementDetails, ConcernsDetails,
   OnboardingData, OnboardingTrackingConfig,
 } from '../types';
 import { TRACKERS } from '../config/trackers';
@@ -380,83 +380,6 @@ function setGoalDetail<M extends keyof GoalDetails>(
     ...goalDetails,
     [modality]: { ...(goalDetails[modality] ?? {}), ...partial } as GoalDetails[M],
   });
-}
-
-function StepGoalPhysio({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.physio ?? {} as Partial<PhysioDetails>;
-  const upd = (partial: Partial<PhysioDetails>) => setGoalDetail(set, data.goal_details, 'physio', partial);
-
-  return (
-    <div className="space-y-5">
-      <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl px-4 py-3">
-        <p className="text-xs text-amber-300/80 leading-relaxed">
-          <strong className="text-amber-300">Medical disclaimer:</strong> FitPath's recovery guidance is informational only and not a substitute for professional medical advice. Always follow your healthcare provider's instructions.
-        </p>
-      </div>
-      <StepHeader title="Physiotherapy & Recovery" subtitle="These questions keep your plan safe and focused on what your body actually needs right now." />
-      <div>
-        <FieldLabel>Why did you select this?</FieldLabel>
-        <RadioCards
-          value={g.reason ?? ''}
-          onChange={v => upd({ reason: v })}
-          options={[
-            { value: 'recovering_injury', label: 'Recovering from an injury' },
-            { value: 'chronic_pain',      label: 'Managing chronic pain' },
-            { value: 'post_surgery',      label: 'Post-surgery rehabilitation' },
-            { value: 'preventing',        label: 'Preventing a recurring problem' },
-            { value: 'mobility',          label: 'Improving mobility & range of motion' },
-            { value: 'maintenance',       label: 'Athletic recovery & maintenance' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Focus areas <span className="text-xs text-gray-500 font-normal">— up to 3</span></FieldLabel>
-        <MultiSelectChips
-          max={3}
-          selected={g.areas ?? []}
-          onChange={v => upd({ areas: v })}
-          options={[
-            { id: 'lower_back',  label: 'Lower back' },
-            { id: 'neck',        label: 'Neck / upper back' },
-            { id: 'shoulders',   label: 'Shoulders' },
-            { id: 'knees',       label: 'Knees' },
-            { id: 'hips',        label: 'Hips' },
-            { id: 'ankles',      label: 'Ankles / feet' },
-            { id: 'wrists',      label: 'Wrists / elbows' },
-            { id: 'core',        label: 'Core' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>How long has this been an issue?</FieldLabel>
-        <RadioCards
-          value={g.duration ?? ''}
-          onChange={v => upd({ duration: v })}
-          options={[
-            { value: 'recent',         label: 'Recent (< 1 month)' },
-            { value: 'few_months',     label: 'A few months' },
-            { value: 'chronic',        label: 'Chronic (6+ months)' },
-            { value: 'post_surgery',   label: 'Post-surgery' },
-          ]}
-        />
-        {g.duration === 'post_surgery' && (
-          <p className="text-xs text-amber-400/70 mt-2">We'll only include gentle mobility work. Validate with your surgeon before starting.</p>
-        )}
-      </div>
-      <div>
-        <FieldLabel>Are you currently working with a physio or doctor?</FieldLabel>
-        <RadioCards
-          value={g.has_professional ?? ''}
-          onChange={v => upd({ has_professional: v })}
-          options={[
-            { value: 'yes_active',   label: 'Yes, actively in treatment' },
-            { value: 'no',           label: 'No, self-managing' },
-            { value: 'was_not_now',  label: 'I was, but not currently' },
-          ]}
-        />
-      </div>
-    </div>
-  );
 }
 
 function StepGoalDiet({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
@@ -1008,13 +931,8 @@ function validateStep(stepId: StepId, data: OnboardingData): string | null {
       return validateModalityFields('cardio', data);
     case 'goal_home':
       return validateModalityFields('home', data);
-    case 'goal_physio': {
-      const g = data.goal_details.physio;
-      if (!g?.reason)                        return 'Please tell us why you selected physiotherapy & recovery.';
-      if (!g?.areas?.length)                 return 'Please select at least one area to focus on.';
-      if (!g?.duration)                      return 'Please select how long this has been an issue.';
-      return null;
-    }
+    case 'goal_physio':
+      return validateModalityFields('physio', data);
     case 'goal_diet': {
       const g = data.goal_details.diet;
       if (!g?.diet_type)                     return 'Please select your diet type.';
@@ -1274,7 +1192,7 @@ export function OnboardingPage() {
       case 'goal_yoga':         return <StepGoalModality modality="yoga" data={data} set={set} />;
       case 'goal_cardio':       return <StepGoalModality modality="cardio" data={data} set={set} />;
       case 'goal_home':         return <StepGoalModality modality="home" data={data} set={set} />;
-      case 'goal_physio':       return <StepGoalPhysio data={data} set={set} />;
+      case 'goal_physio':       return <StepGoalModality modality="physio" data={data} set={set} />;
       case 'goal_diet':         return <StepGoalDiet data={data} set={set} />;
       case 'goal_supplements':  return <StepGoalSupplements data={data} set={set} />;
       case 'goal_concerns':     return <StepGoalConcerns data={data} set={set} />;

@@ -50,6 +50,13 @@ export function StepGoalModality({ modality, data, set }: { modality: GoalModali
 
   return (
     <div className="space-y-5">
+      {definition.disclaimer && (
+        <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl px-4 py-3">
+          <p className="text-xs text-amber-300/80 leading-relaxed">
+            <strong className="text-amber-300">Medical disclaimer:</strong> {definition.disclaimer}
+          </p>
+        </div>
+      )}
       <StepHeader title={header.title} subtitle={header.subtitle} />
       {definition.uiFields.map(field => {
         if (field.visibleIf && !field.visibleIf(ctx)) return null;
