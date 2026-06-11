@@ -694,5 +694,13 @@ async function seedTasksFromPlan(userId: string, planId: string, rawPlanData: un
     tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'sleep', title: `Sleep by ${sleep.target_bedtime}`, description: `Wake at ${sleep.target_wake_time}`, order_index: idx++, is_rest_day: false });
   }
 
-  if (tasks.length > 0) await supabase.from('daily_tasks').insert(tasks);
+  // Upsert (rather than insert) so that a racing duplicate seed attempt
+  // (e.g. this effect firing twice before the first insert commits) is a
+  // no-op instead of creating duplicate rows for the same day.
+  if (tasks.length > 0) {
+    await supabase.from('daily_tasks').upsert(tasks, {
+      onConflict: 'user_id,task_date,category,title',
+      ignoreDuplicates: true,
+    });
+  }
 }
