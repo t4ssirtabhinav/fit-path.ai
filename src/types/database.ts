@@ -42,6 +42,7 @@ export interface Database {
           last_onboarded_at?: string | null;
           updated_at?: string;
         };
+        Relationships: [];
       };
       health_profiles: {
         Row: {
@@ -103,6 +104,7 @@ export interface Database {
           job_type?: string | null;
         };
         Update: Partial<Database['public']['Tables']['health_profiles']['Insert']>;
+        Relationships: [];
       };
       tracking_config: {
         Row: {
@@ -124,6 +126,7 @@ export interface Database {
           reminder_style?: string;
         };
         Update: Partial<Database['public']['Tables']['tracking_config']['Insert']>;
+        Relationships: [];
       };
       plans: {
         Row: {
@@ -148,6 +151,7 @@ export interface Database {
           last_regenerated_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['plans']['Insert']>;
+        Relationships: [];
       };
       daily_tasks: {
         Row: {
@@ -178,6 +182,7 @@ export interface Database {
           is_rest_day?: boolean;
         };
         Update: Partial<Database['public']['Tables']['daily_tasks']['Insert']>;
+        Relationships: [];
       };
       task_logs: {
         Row: {
@@ -202,6 +207,7 @@ export interface Database {
           notes?: string | null;
         };
         Update: Partial<Database['public']['Tables']['task_logs']['Insert']>;
+        Relationships: [];
       };
       body_measurements: {
         Row: {
@@ -226,6 +232,7 @@ export interface Database {
           notes?: string | null;
         };
         Update: Partial<Database['public']['Tables']['body_measurements']['Insert']>;
+        Relationships: [];
       };
       streaks: {
         Row: {
@@ -251,6 +258,7 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['streaks']['Insert']>;
+        Relationships: [];
       };
       buddies: {
         Row: {
@@ -268,6 +276,7 @@ export interface Database {
           status?: 'pending' | 'active' | 'declined';
         };
         Update: Partial<Database['public']['Tables']['buddies']['Insert']>;
+        Relationships: [];
       };
       daily_logs: {
         Row: {
@@ -299,6 +308,7 @@ export interface Database {
           other_comments?: string | null;
         };
         Update: Partial<Database['public']['Tables']['daily_logs']['Insert']>;
+        Relationships: [];
       };
       milestones: {
         Row: {
@@ -315,7 +325,17 @@ export interface Database {
           unlocked_at?: string;
         };
         Update: Partial<Database['public']['Tables']['milestones']['Insert']>;
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: {
+      lookup_profile_by_invite_code: {
+        Args: { code: string };
+        Returns: { id: string; display_name: string }[];
+      };
+    };
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }
