@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { PlanRepository } from '../repositories/PlanRepository';
 import { today, DEFAULT_TIMEZONE } from '../lib/utils';
 import { parsePlanData } from '../lib/planSchema';
 import { Button } from '../components/ui/Button';
@@ -113,7 +114,7 @@ export function DashboardPage() {
 
     // If no tasks today, try to seed from active plan
     if (enriched.length === 0) {
-      const { data: plan } = await supabase.from('plans').select('id, plan_data').eq('user_id', user.id).eq('is_active', true).order('generated_at', { ascending: false }).limit(1).maybeSingle();
+      const plan = await PlanRepository.getActivePlan(user.id);
       if (plan) {
         await seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
         const { data: newTasks } = await supabase.from('daily_tasks').select('*').eq('user_id', user.id).eq('task_date', todayDate).order('order_index');

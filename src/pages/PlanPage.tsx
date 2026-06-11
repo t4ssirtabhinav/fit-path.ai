@@ -5,37 +5,25 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import type { PlanData, WorkoutSession, Supplement } from '../types';
+import type { WorkoutSession, Supplement } from '../types';
 import { parsePlanData } from '../lib/planSchema';
+import { usePlan } from '../hooks/usePlan';
 
 export function PlanPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [planData, setPlanData] = useState<PlanData | null>(null);
-  const [planDataInvalid, setPlanDataInvalid] = useState(false);
-  const [planMeta, setPlanMeta] = useState<{ generated_at: string; last_regenerated_at: string | null } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { planData, planDataInvalid, planMeta, loading, setPlanData, setPlanDataInvalid } = usePlan(user?.id);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['workout', 'meal']));
   const [regenLoading, setRegenLoading] = useState(false);
   const [regenError, setRegenError] = useState('');
   const [regenCooldownDays, setRegenCooldownDays] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!user) return;
-    supabase.from('plans').select('plan_data, generated_at, last_regenerated_at').eq('user_id', user.id).eq('is_active', true).order('generated_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => {
-      if (data) {
-        const parsed = parsePlanData(data.plan_data);
-        setPlanData(parsed);
-        setPlanDataInvalid(!parsed);
-        setPlanMeta({ generated_at: data.generated_at, last_regenerated_at: data.last_regenerated_at });
-        // Calculate cooldown
-        const lastRegen = data.last_regenerated_at ? new Date(data.last_regenerated_at) : new Date(data.generated_at);
-        const daysSince = (Date.now() - lastRegen.getTime()) / (1000 * 60 * 60 * 24);
-        if (daysSince < 30) setRegenCooldownDays(Math.ceil(30 - daysSince));
-      }
-      setLoading(false);
-    });
-  }, [user]);
+    if (!planMeta) return;
+    const lastRegen = planMeta.last_regenerated_at ? new Date(planMeta.last_regenerated_at) : new Date(planMeta.generated_at);
+    const daysSince = (Date.now() - lastRegen.getTime()) / (1000 * 60 * 60 * 24);
+    setRegenCooldownDays(daysSince < 30 ? Math.ceil(30 - daysSince) : null);
+  }, [planMeta]);
 
   function toggle(section: string) {
     setExpandedSections(prev => {
