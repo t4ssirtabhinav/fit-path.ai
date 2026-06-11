@@ -10,6 +10,7 @@ Six themed planning documents covering 20 requested tickets, written after audit
 | [04-engagement-buddy-rewards-referral.md](04-engagement-buddy-rewards-referral.md) | #14, #15, #16 | Buddy feature evolution (groups/leaderboards), loyalty & rewards (consistency score + badges, not a spendable currency), referral system built on existing invite-code infra |
 | [05-content-ai-plans-personalization.md](05-content-ai-plans-personalization.md) | #17, #18, #19 | Self-service plan adjustments with AI-as-guardrail, quick-read content library, plan-generation fallback (reframed: similarity-matching as an AI *input*, not a replacement — flagged as the highest-risk idea in the batch) |
 | [06-platform-error-logging-and-emails.md](06-platform-error-logging-and-emails.md) | #7, #20 | Centralized error monitoring (Sentry recommended), transactional/lifecycle email system (Resend + react-email recommended) |
+| [07-beta-priority-matrix.md](07-beta-priority-matrix.md) | All 20 + 7 new (N1-N7) | Beta-readiness priority matrix: tiers, effort/complexity/dependency/impact/cost for every ticket above plus 7 newly-raised items (workout-plan flattening, exercise/meal logging, tracking-only fix, profile cleanup, mobile number, WhatsApp) |
 
 ## Cross-cutting notes worth keeping in mind when prioritizing
 - **Doc 06 (error logging + emails) is largely foundational** — several other plans (security notices, reminders, referral confirmations, plan-adjustment audits) assume some logging/email capability exists. Worth sequencing relatively early despite being less visible.
