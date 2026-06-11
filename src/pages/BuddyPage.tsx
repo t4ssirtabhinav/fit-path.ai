@@ -4,6 +4,8 @@ import { Users, Copy, Check, UserPlus, Flame, TrendingUp, X, Award, Dumbbell, Za
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { DEFAULT_TIMEZONE } from '../lib/utils';
+import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
+import { StreakRepository } from '../repositories/StreakRepository';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import type { BuddyDetail, DailyTask, TaskLog } from '../types';
@@ -49,21 +51,21 @@ export function BuddyPage() {
     if (!user) return;
     setLoading(true);
 
-    const [streakRes, buddyRels] = await Promise.all([
-      supabase.from('streaks').select('*').eq('user_id', user.id).maybeSingle(),
+    const [myStreakData, buddyRels] = await Promise.all([
+      StreakRepository.getForUser(user.id),
       supabase.from('buddies')
         .select('*')
         .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
         .neq('status', 'declined'),
     ]);
 
-    if (streakRes.data) {
+    if (myStreakData) {
       setMyStreak({
-        current: streakRes.data.current_streak,
-        longest: streakRes.data.longest_streak,
-        totalActive: streakRes.data.total_active_days,
-        missedDays: streakRes.data.total_missed_days,
-        monthlyRate: Math.round((streakRes.data.monthly_completion_rate ?? 0) * 100),
+        current: myStreakData.current_streak,
+        longest: myStreakData.longest_streak,
+        totalActive: myStreakData.total_active_days,
+        missedDays: myStreakData.total_missed_days,
+        monthlyRate: Math.round((myStreakData.monthly_completion_rate ?? 0) * 100),
       });
     }
 
@@ -86,9 +88,9 @@ export function BuddyPage() {
     if (activeBuddyIds.length > 0) {
       const [buddyProfiles, buddyStreaks] = await Promise.all([
         supabase.from('profiles').select('id, display_name').in('id', activeBuddyIds),
-        supabase.from('streaks').select('user_id, current_streak, longest_streak, total_active_days, total_missed_days, monthly_completion_rate').in('user_id', activeBuddyIds),
+        StreakRepository.getForUsers(activeBuddyIds),
       ]);
-      const streakMap = new Map((buddyStreaks.data ?? []).map(s => [s.user_id, s]));
+      const streakMap = new Map(buddyStreaks.map(s => [s.user_id, s]));
       const details: BuddyDetail[] = (buddyProfiles.data ?? []).map(p => {
         const s = streakMap.get(p.id);
         return {
@@ -113,12 +115,12 @@ export function BuddyPage() {
     // Use the buddy's own timezone — their tasks were seeded against their "today", not ours
     const { data: buddyProfile } = await supabase.from('profiles').select('timezone').eq('id', buddyId).maybeSingle();
     const today = new Date().toLocaleDateString('en-CA', { timeZone: buddyProfile?.timezone || DEFAULT_TIMEZONE });
-    const [tasksRes, logsRes] = await Promise.all([
-      supabase.from('daily_tasks').select('*').eq('user_id', buddyId).eq('task_date', today).in('category', ['workout', 'habit', 'sleep']).order('order_index'),
-      supabase.from('task_logs').select('*').eq('user_id', buddyId).eq('log_date', today),
+    const [tasksData, logsData] = await Promise.all([
+      DailyTaskRepository.getForDate(buddyId, today, ['workout', 'habit', 'sleep']),
+      DailyTaskRepository.getLogsForDate(buddyId, today),
     ]);
-    setBuddyTasks(tasksRes.data ?? []);
-    setBuddyLogs(logsRes.data ?? []);
+    setBuddyTasks(tasksData);
+    setBuddyLogs(logsData);
   }
 
   function copyInvite() {

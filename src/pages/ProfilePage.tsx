@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { HealthProfileRepository } from '../repositories/HealthProfileRepository';
 import { PlanRepository } from '../repositories/PlanRepository';
+import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { useHealthProfile } from '../hooks/useHealthProfile';
 
 interface PlanHistoryItem {
@@ -45,16 +46,16 @@ export function ProfilePage() {
   async function exportData() {
     if (!user) return;
     setExportLoading(true);
-    const [measRes, logsRes, plans] = await Promise.all([
+    const [measRes, taskLogs, plans] = await Promise.all([
       supabase.from('body_measurements').select('*').eq('user_id', user.id),
-      supabase.from('task_logs').select('*').eq('user_id', user.id),
+      DailyTaskRepository.getAllLogs(user.id),
       PlanRepository.getAllPlanData(user.id),
     ]);
     const exportObj = {
       profile,
       health_profile: hp,
       measurements: measRes.data,
-      task_logs: logsRes.data,
+      task_logs: taskLogs,
       plans,
       exported_at: new Date().toISOString(),
     };

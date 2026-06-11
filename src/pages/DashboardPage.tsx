@@ -9,11 +9,16 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { PlanRepository } from '../repositories/PlanRepository';
+import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
+import { StreakRepository } from '../repositories/StreakRepository';
 import { today, DEFAULT_TIMEZONE } from '../lib/utils';
 import { parsePlanData } from '../lib/planSchema';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import type { DailyTask, TaskLog, Streak, DailyLog } from '../types';
+import type { Database } from '../types/database';
+
+type DailyTaskInsert = Database['public']['Tables']['daily_tasks']['Insert'];
 
 type TaskWithLog = DailyTask & { log?: TaskLog };
 
@@ -101,24 +106,24 @@ export function DashboardPage() {
     if (!user) return;
     setLoading(true);
 
-    const [tasksRes, logsRes, streakRes] = await Promise.all([
-      supabase.from('daily_tasks').select('*').eq('user_id', user.id).eq('task_date', todayDate).order('order_index'),
-      supabase.from('task_logs').select('*').eq('user_id', user.id).eq('log_date', todayDate),
-      supabase.from('streaks').select('*').eq('user_id', user.id).maybeSingle(),
+    const [tasksData, logsData, streakData] = await Promise.all([
+      DailyTaskRepository.getForDate(user.id, todayDate),
+      DailyTaskRepository.getLogsForDate(user.id, todayDate),
+      StreakRepository.getForUser(user.id),
     ]);
 
-    const logMap = new Map((logsRes.data ?? []).map(l => [l.task_id, l]));
-    const enriched = (tasksRes.data ?? []).map(t => ({ ...t, log: logMap.get(t.id) }));
+    const logMap = new Map(logsData.map(l => [l.task_id, l]));
+    const enriched = tasksData.map(t => ({ ...t, log: logMap.get(t.id) }));
     setTasks(enriched);
-    setStreak(streakRes.data);
+    setStreak(streakData);
 
     // If no tasks today, try to seed from active plan
     if (enriched.length === 0) {
       const plan = await PlanRepository.getActivePlan(user.id);
       if (plan) {
         await seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
-        const { data: newTasks } = await supabase.from('daily_tasks').select('*').eq('user_id', user.id).eq('task_date', todayDate).order('order_index');
-        setTasks((newTasks ?? []).map(t => ({ ...t, log: undefined })));
+        const newTasks = await DailyTaskRepository.getForDate(user.id, todayDate);
+        setTasks(newTasks.map(t => ({ ...t, log: undefined })));
       }
     }
 
@@ -133,9 +138,9 @@ export function DashboardPage() {
       const buddyIds = buddyRels.map(b => b.requester_id === user.id ? b.recipient_id : b.requester_id);
       const [buddyProfiles, buddyStreaks] = await Promise.all([
         supabase.from('profiles').select('id, display_name').in('id', buddyIds),
-        supabase.from('streaks').select('user_id, current_streak, monthly_completion_rate').in('user_id', buddyIds),
+        StreakRepository.getForUsers(buddyIds),
       ]);
-      const streakMap = new Map((buddyStreaks.data ?? []).map(s => [s.user_id, s]));
+      const streakMap = new Map(buddyStreaks.map(s => [s.user_id, s]));
       const tiles: BuddyTile[] = (buddyProfiles.data ?? []).map(p => {
         const s = streakMap.get(p.id);
         return {
@@ -168,20 +173,20 @@ export function DashboardPage() {
         : t
     ));
 
-    await supabase.from('task_logs').upsert({
+    await DailyTaskRepository.upsertLog({
       user_id: user.id,
       task_id: task.id,
       log_date: todayDate,
       completed: nowCompleted,
       completed_at: nowCompleted ? new Date().toISOString() : null,
-    }, { onConflict: 'user_id,task_id,log_date' });
+    });
 
     await updateStreak(user.id, nowCompleted);
     setTogglingId(null);
   }
 
   async function updateStreak(userId: string, completedAny: boolean) {
-    const { data: current } = await supabase.from('streaks').select('*').eq('user_id', userId).maybeSingle();
+    const current = await StreakRepository.getForUser(userId);
     if (!current) return;
 
     const lastActive = current.last_active_date;
@@ -194,13 +199,13 @@ export function DashboardPage() {
       newStreak = lastActive === yest ? current.current_streak + 1 : 1;
     }
 
-    await supabase.from('streaks').update({
+    await StreakRepository.update(userId, {
       current_streak: newStreak,
       longest_streak: Math.max(newStreak, current.longest_streak),
       last_active_date: completedAny ? todayDate : current.last_active_date,
       total_active_days: completedAny && lastActive !== todayDate ? current.total_active_days + 1 : current.total_active_days,
       updated_at: new Date().toISOString(),
-    }).eq('user_id', userId);
+    });
 
     setStreak(prev => prev ? { ...prev, current_streak: newStreak, longest_streak: Math.max(newStreak, prev.longest_streak) } : prev);
   }
@@ -210,17 +215,15 @@ export function DashboardPage() {
     setRestDayLogging(true);
     const pending = tasks.filter(t => !t.log?.completed);
     if (pending.length > 0) {
-      const { error } = await supabase.from('task_logs').upsert(
-        pending.map(task => ({
+      try {
+        await DailyTaskRepository.upsertLogs(pending.map(task => ({
           user_id: user.id,
           task_id: task.id,
           log_date: todayDate,
           completed: false,
           notes: 'Rest day',
-        })),
-        { onConflict: 'user_id,task_id,log_date' }
-      );
-      if (error) {
+        })));
+      } catch (error) {
         console.error('Failed to log rest day:', error);
         setRestDayLogging(false);
         return;
@@ -647,10 +650,9 @@ async function seedTasksFromPlan(userId: string, planId: string, rawPlanData: un
   const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone }).toLowerCase();
 
   // Only seed if no tasks exist for today (prevent duplication)
-  const { data: existing } = await supabase.from('daily_tasks').select('id').eq('user_id', userId).eq('task_date', todayStr).limit(1);
-  if (existing && existing.length > 0) return;
+  if (await DailyTaskRepository.hasTasksForDate(userId, todayStr)) return;
 
-  const tasks: Array<Record<string, unknown>> = [];
+  const tasks: DailyTaskInsert[] = [];
   let idx = 0;
 
   const scheduleMap = planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }> | undefined;
@@ -698,10 +700,5 @@ async function seedTasksFromPlan(userId: string, planId: string, rawPlanData: un
   // Upsert (rather than insert) so that a racing duplicate seed attempt
   // (e.g. this effect firing twice before the first insert commits) is a
   // no-op instead of creating duplicate rows for the same day.
-  if (tasks.length > 0) {
-    await supabase.from('daily_tasks').upsert(tasks, {
-      onConflict: 'user_id,task_date,category,title',
-      ignoreDuplicates: true,
-    });
-  }
+  await DailyTaskRepository.seedTasks(tasks);
 }

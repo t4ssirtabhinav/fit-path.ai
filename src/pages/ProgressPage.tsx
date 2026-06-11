@@ -4,6 +4,7 @@ import { TrendingDown, TrendingUp, Scale, Ruler, Calendar, ChevronLeft, ChevronR
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
+import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, addDays } from 'date-fns';
 import type { DailyLog } from '../types';
 
@@ -42,20 +43,20 @@ export function ProgressPage() {
     const monthStart = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
     const monthEnd = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
-    const [measRes, tasksRes, logsRes] = await Promise.all([
+    const [measRes, tasksData, logsData] = await Promise.all([
       supabase.from('body_measurements').select('measured_at, weight_kg, waist_cm').eq('user_id', user.id).gte('measured_at', thirtyDaysAgo).order('measured_at'),
-      supabase.from('daily_tasks').select('task_date, id').eq('user_id', user.id).gte('task_date', monthStart).lte('task_date', monthEnd),
-      supabase.from('task_logs').select('log_date, completed').eq('user_id', user.id).gte('log_date', monthStart).lte('log_date', monthEnd),
+      DailyTaskRepository.getDatesInRange(user.id, monthStart, monthEnd),
+      DailyTaskRepository.getLogsInRange(user.id, monthStart, monthEnd),
     ]);
 
     setMeasurements((measRes.data ?? []) as Measurement[]);
 
     const tasksByDate = new Map<string, number>();
-    for (const t of tasksRes.data ?? []) {
+    for (const t of tasksData) {
       tasksByDate.set(t.task_date, (tasksByDate.get(t.task_date) ?? 0) + 1);
     }
     const completedByDate = new Map<string, number>();
-    for (const l of logsRes.data ?? []) {
+    for (const l of logsData) {
       if (l.completed) completedByDate.set(l.log_date, (completedByDate.get(l.log_date) ?? 0) + 1);
     }
 
@@ -72,16 +73,16 @@ export function ProgressPage() {
 
   async function loadDateData() {
     if (!user) return;
-    const [logRes, tasksRes] = await Promise.all([
+    const [logRes, tasksData] = await Promise.all([
       supabase.from('daily_logs').select('*').eq('user_id', user.id).eq('log_date', selectedDate).maybeSingle(),
-      supabase.from('daily_tasks').select('id, category, title').eq('user_id', user.id).eq('task_date', selectedDate),
+      DailyTaskRepository.getForDate(user.id, selectedDate),
     ]);
     setDateLog(logRes.data);
 
-    if (tasksRes.data && tasksRes.data.length > 0) {
-      const logsRes = await supabase.from('task_logs').select('task_id, completed').eq('user_id', user.id).eq('log_date', selectedDate);
-      const logMap = new Map((logsRes.data ?? []).map(l => [l.task_id, l.completed]));
-      setDateTasks((tasksRes.data ?? []).map(t => ({
+    if (tasksData.length > 0) {
+      const logsData = await DailyTaskRepository.getLogsForDate(user.id, selectedDate);
+      const logMap = new Map(logsData.map(l => [l.task_id, l.completed]));
+      setDateTasks(tasksData.map(t => ({
         category: t.category,
         title: t.title,
         completed: logMap.get(t.id) ?? false,

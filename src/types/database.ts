@@ -248,6 +248,7 @@ export interface Database {
           total_missed_days?: number;
           last_active_date?: string | null;
           monthly_completion_rate?: number;
+          updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['streaks']['Insert']>;
       };
