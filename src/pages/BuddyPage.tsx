@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Users, Copy, Check, UserPlus, Flame, TrendingUp, X, Award, Dumbbell, Zap, Moon, ChevronDown, ChevronUp } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { DEFAULT_TIMEZONE } from '../lib/utils';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { StreakRepository } from '../repositories/StreakRepository';
+import { BuddyRepository } from '../repositories/BuddyRepository';
+import { ProfileRepository } from '../repositories/ProfileRepository';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import type { BuddyDetail, DailyTask, TaskLog } from '../types';
@@ -53,10 +54,7 @@ export function BuddyPage() {
 
     const [myStreakData, buddyRels] = await Promise.all([
       StreakRepository.getForUser(user.id),
-      supabase.from('buddies')
-        .select('*')
-        .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
-        .neq('status', 'declined'),
+      BuddyRepository.getRelations(user.id),
     ]);
 
     if (myStreakData) {
@@ -73,9 +71,9 @@ export function BuddyPage() {
     const pending: typeof pendingRequests = [];
     const activeBuddyIds: string[] = [];
 
-    for (const rel of buddyRels.data ?? []) {
+    for (const rel of buddyRels) {
       if (rel.status === 'pending' && rel.recipient_id === user.id) {
-        const { data: requesterProfile } = await supabase.from('profiles').select('display_name').eq('id', rel.requester_id).maybeSingle();
+        const requesterProfile = await ProfileRepository.getForUser(rel.requester_id);
         pending.push({ id: rel.id, name: requesterProfile?.display_name ?? 'Someone', requesterId: rel.requester_id });
       } else if (rel.status === 'active') {
         const buddyId = rel.requester_id === user.id ? rel.recipient_id : rel.requester_id;
@@ -87,11 +85,11 @@ export function BuddyPage() {
     // Load active buddy details
     if (activeBuddyIds.length > 0) {
       const [buddyProfiles, buddyStreaks] = await Promise.all([
-        supabase.from('profiles').select('id, display_name').in('id', activeBuddyIds),
+        ProfileRepository.getByIds(activeBuddyIds),
         StreakRepository.getForUsers(activeBuddyIds),
       ]);
       const streakMap = new Map(buddyStreaks.map(s => [s.user_id, s]));
-      const details: BuddyDetail[] = (buddyProfiles.data ?? []).map(p => {
+      const details: BuddyDetail[] = buddyProfiles.map(p => {
         const s = streakMap.get(p.id);
         return {
           id: p.id,
@@ -113,7 +111,7 @@ export function BuddyPage() {
 
   async function loadBuddyDetail(buddyId: string) {
     // Use the buddy's own timezone — their tasks were seeded against their "today", not ours
-    const { data: buddyProfile } = await supabase.from('profiles').select('timezone').eq('id', buddyId).maybeSingle();
+    const buddyProfile = await ProfileRepository.getForUser(buddyId);
     const today = new Date().toLocaleDateString('en-CA', { timeZone: buddyProfile?.timezone || DEFAULT_TIMEZONE });
     const [tasksData, logsData] = await Promise.all([
       DailyTaskRepository.getForDate(buddyId, today, ['workout', 'habit', 'sleep']),
@@ -135,26 +133,17 @@ export function BuddyPage() {
     setConnectError('');
     const code = inviteInput.trim().toUpperCase();
     // Use SECURITY DEFINER function for safe invite code lookup
-    const { data: targetProfile, error: rpcError } = await supabase.rpc('lookup_profile_by_invite_code', { code });
-    if (rpcError || !targetProfile || targetProfile.length === 0) { setConnectError('Invite code not found.'); setConnectLoading(false); return; }
+    const targetProfile = await BuddyRepository.lookupByInviteCode(code);
+    if (!targetProfile || targetProfile.length === 0) { setConnectError('Invite code not found.'); setConnectLoading(false); return; }
     const targetId = targetProfile[0].id;
     if (targetId === user.id) { setConnectError("You can't buddy with yourself."); setConnectLoading(false); return; }
-    // Check for existing pending or active connection
-    const { data: existing } = await supabase.from('buddies')
-      .select('id')
-      .eq('requester_id', user.id)
-      .eq('recipient_id', targetId)
-      .in('status', ['pending', 'active'])
-      .maybeSingle();
-    if (existing) { setConnectError('You already have a pending or active connection with this person.'); setConnectLoading(false); return; }
-    const { data: reverseExisting } = await supabase.from('buddies')
-      .select('id')
-      .eq('requester_id', targetId)
-      .eq('recipient_id', user.id)
-      .in('status', ['pending', 'active'])
-      .maybeSingle();
-    if (reverseExisting) { setConnectError('You already have a pending or active connection with this person.'); setConnectLoading(false); return; }
-    const { error } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetId });
+    // Check for existing pending or active connection (either direction)
+    const [existing, reverseExisting] = await Promise.all([
+      BuddyRepository.hasPendingOrActiveConnection(user.id, targetId),
+      BuddyRepository.hasPendingOrActiveConnection(targetId, user.id),
+    ]);
+    if (existing || reverseExisting) { setConnectError('You already have a pending or active connection with this person.'); setConnectLoading(false); return; }
+    const { error } = await BuddyRepository.create(user.id, targetId);
     if (error) {
       setConnectError(error.code === '23505'
         ? 'You already have a pending or active connection with this person.'
@@ -167,27 +156,21 @@ export function BuddyPage() {
   }
 
   async function acceptRequest(req: typeof pendingRequests[0]) {
-    await supabase.from('buddies').update({ status: 'active' }).eq('id', req.id);
+    await BuddyRepository.updateStatus(req.id, 'active');
     setPendingRequests(prev => prev.filter(p => p.id !== req.id));
     await loadData();
   }
 
   async function declineRequest(req: typeof pendingRequests[0]) {
-    await supabase.from('buddies').update({ status: 'declined' }).eq('id', req.id);
+    await BuddyRepository.updateStatus(req.id, 'declined');
     setPendingRequests(prev => prev.filter(p => p.id !== req.id));
   }
 
   async function removeBuddy(buddyId: string) {
     if (!user) return;
-    await supabase.from('buddies')
-      .update({ status: 'declined' })
-      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
-      .eq('status', 'active');
+    await BuddyRepository.declineAllActiveFor(user.id);
     // Also filter by the specific buddy
-    await supabase.from('buddies')
-      .update({ status: 'declined' })
-      .or(`requester_id.eq.${buddyId},recipient_id.eq.${buddyId}`)
-      .eq('status', 'active');
+    await BuddyRepository.declineAllActiveFor(buddyId);
     setBuddies(prev => prev.filter(b => b.id !== buddyId));
     setExpandedBuddyId(null);
   }

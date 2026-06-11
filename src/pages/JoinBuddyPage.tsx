@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Users, Check, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
+import { BuddyRepository } from '../repositories/BuddyRepository';
 
 export function JoinBuddyPage() {
   const { code } = useParams<{ code: string }>();
@@ -19,8 +19,8 @@ export function JoinBuddyPage() {
   useEffect(() => {
     if (!code) return;
     // Use SECURITY DEFINER function instead of direct table query
-    supabase.rpc('lookup_profile_by_invite_code', { code: code.toUpperCase() }).then(({ data, error: rpcError }) => {
-      if (rpcError || !data || data.length === 0) {
+    BuddyRepository.lookupByInviteCode(code.toUpperCase()).then(data => {
+      if (!data || data.length === 0) {
         setError('This invite link is invalid or has expired.');
       } else {
         setTargetId(data[0].id);
@@ -34,31 +34,17 @@ export function JoinBuddyPage() {
     if (!user || !targetId) return;
     setConnecting(true);
     if (targetId === user.id) { setError("You can't buddy with yourself."); setConnecting(false); return; }
-    // Check for existing pending or active connection before inserting
-    const { data: existing } = await supabase.from('buddies')
-      .select('id')
-      .eq('requester_id', user.id)
-      .eq('recipient_id', targetId)
-      .in('status', ['pending', 'active'])
-      .maybeSingle();
-    if (existing) {
+    // Check for existing pending or active connection before inserting (either direction)
+    const [existing, reverseExisting] = await Promise.all([
+      BuddyRepository.hasPendingOrActiveConnection(user.id, targetId),
+      BuddyRepository.hasPendingOrActiveConnection(targetId, user.id),
+    ]);
+    if (existing || reverseExisting) {
       setError('You already have a pending or active connection with this person.');
       setConnecting(false);
       return;
     }
-    // Also check reverse direction
-    const { data: reverseExisting } = await supabase.from('buddies')
-      .select('id')
-      .eq('requester_id', targetId)
-      .eq('recipient_id', user.id)
-      .in('status', ['pending', 'active'])
-      .maybeSingle();
-    if (reverseExisting) {
-      setError('You already have a pending or active connection with this person.');
-      setConnecting(false);
-      return;
-    }
-    const { error: insertError } = await supabase.from('buddies').insert({ requester_id: user.id, recipient_id: targetId });
+    const { error: insertError } = await BuddyRepository.create(user.id, targetId);
     if (insertError) {
       setError(insertError.code === '23505'
         ? 'You already have a pending or active connection with this person.'
