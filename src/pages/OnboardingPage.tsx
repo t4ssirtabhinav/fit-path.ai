@@ -15,7 +15,7 @@ import { TagInput } from '../components/onboarding/TagInput';
 import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/StepGoalModality';
 import { MODALITY_REGISTRY } from '../config/modalities/registry';
 import type {
-  GoalModality, GoalDetails, YogaDetails, CardioDetails,
+  GoalModality, GoalDetails,
   HomeDetails, PhysioDetails, DietDetails, SupplementDetails, ConcernsDetails,
   OnboardingData, OnboardingTrackingConfig,
 } from '../types';
@@ -380,148 +380,6 @@ function setGoalDetail<M extends keyof GoalDetails>(
     ...goalDetails,
     [modality]: { ...(goalDetails[modality] ?? {}), ...partial } as GoalDetails[M],
   });
-}
-
-function StepGoalYoga({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.yoga ?? {} as Partial<YogaDetails>;
-  const upd = (partial: Partial<YogaDetails>) => setGoalDetail(set, data.goal_details, 'yoga', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Yoga" subtitle="Your plan varies a lot by style and goal — these questions ensure yours is right." />
-      <div>
-        <FieldLabel>Your yoga experience</FieldLabel>
-        <RadioCards
-          value={g.experience ?? ''}
-          onChange={v => upd({ experience: v })}
-          options={[
-            { value: 'beginner',     label: 'Complete beginner' },
-            { value: 'tried_few',    label: 'Tried a few times' },
-            { value: 'regular',      label: 'Regular (3–12 months)' },
-            { value: 'established',  label: 'Established practice (1+ year)' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Session duration you can commit to</FieldLabel>
-        <ButtonGrid
-          cols={3}
-          value={g.session_duration ?? ''}
-          onChange={v => upd({ session_duration: v })}
-          options={[
-            { value: '15_20min', label: '15–20 min' },
-            { value: '30_45min', label: '30–45 min' },
-            { value: '60min',    label: '60+ min' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>What are you hoping yoga does for you? <span className="text-xs text-gray-500 font-normal">— up to 2</span></FieldLabel>
-        <MultiSelectChips
-          max={2}
-          selected={g.goals ?? []}
-          onChange={v => upd({ goals: v })}
-          options={[
-            { id: 'improve_flexibility', label: 'Improve flexibility' },
-            { id: 'reduce_stress',       label: 'Reduce stress & anxiety' },
-            { id: 'complement_gym',      label: 'Complement gym training' },
-            { id: 'back_posture',        label: 'Back / posture relief' },
-            { id: 'body_awareness',      label: 'Body awareness' },
-            { id: 'build_strength',      label: 'Build strength' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Style preference</FieldLabel>
-        <RadioCards
-          value={g.style ?? ''}
-          onChange={v => upd({ style: v })}
-          options={[
-            { value: 'not_sure', label: "Not sure — let the plan decide" },
-            { value: 'hatha',    label: 'Hatha',   description: 'Slow, foundational, beginner-friendly' },
-            { value: 'vinyasa',  label: 'Vinyasa', description: 'Flowing sequences, moderate intensity' },
-            { value: 'yin',      label: 'Yin',     description: 'Deep passive stretching, held poses' },
-            { value: 'power',    label: 'Power yoga', description: 'Strength-based, athletic approach' },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StepGoalCardio({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const { age, weight_kg, height_cm } = data;
-  const bmi = height_cm > 0 ? weight_kg / ((height_cm / 100) ** 2) : 0;
-  const g = data.goal_details.cardio ?? {} as Partial<CardioDetails>;
-  const upd = (partial: Partial<CardioDetails>) => setGoalDetail(set, data.goal_details, 'cardio', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Walking / Running / Cardio" subtitle="Cardio is paced to your current baseline so it's challenging but sustainable." />
-      <div>
-        <FieldLabel>Current cardio baseline</FieldLabel>
-        <RadioCards
-          value={g.baseline ?? ''}
-          onChange={v => upd({ baseline: v })}
-          options={[
-            { value: 'rarely_move',    label: 'I rarely move much' },
-            { value: 'casual_walking', label: 'Casual walking (< 30 min/day)' },
-            { value: 'brisk_walk',     label: 'Brisk walking / occasional jog' },
-            { value: 'running',        label: 'Running with a regular pace / distance' },
-            { value: 'sports_hiit',    label: 'Sports or HIIT training regularly' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Activities you prefer</FieldLabel>
-        <MultiSelectChips
-          selected={g.activities ?? []}
-          onChange={v => upd({ activities: v })}
-          options={[
-            { id: 'walking',  label: 'Walking' },
-            { id: 'jogging',  label: 'Jogging' },
-            { id: 'running',  label: 'Running' },
-            { id: 'cycling',  label: 'Cycling' },
-            { id: 'swimming', label: 'Swimming' },
-            { id: 'hiit',     label: 'HIIT / Circuit' },
-            { id: 'jump_rope',label: 'Jump rope' },
-          ]}
-        />
-        {(age > 55 || bmi > 30) && (
-          <p className="text-xs text-amber-400/70 mt-2">
-            {age > 55 ? 'Low-impact options like walking and cycling are highlighted for your age group.' : 'We\'ll ease you in with walk-run intervals based on your BMI.'}
-          </p>
-        )}
-      </div>
-      <div>
-        <FieldLabel>Main goal</FieldLabel>
-        <RadioCards
-          value={g.goal ?? ''}
-          onChange={v => upd({ goal: v })}
-          options={[
-            { value: 'lose_fat',    label: 'Lose weight / burn fat' },
-            { value: 'endurance',   label: 'Build stamina & endurance' },
-            { value: 'heart_health',label: 'Heart health & longevity' },
-            { value: 'stress',      label: 'Stress relief' },
-            { value: 'event',       label: 'Train for an event (5K, 10K…)' },
-            { value: 'complement',  label: 'Complement strength training' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Days per week</FieldLabel>
-        <ButtonGrid
-          cols={4}
-          value={g.days_per_week ?? 0}
-          onChange={v => upd({ days_per_week: Number(v) })}
-          options={[
-            { value: '2', label: '2 days' }, { value: '3', label: '3 days' },
-            { value: '4', label: '4 days' }, { value: '5', label: '5 days' },
-          ]}
-        />
-      </div>
-    </div>
-  );
 }
 
 function StepGoalHome({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
@@ -1209,18 +1067,10 @@ function validateStep(stepId: StepId, data: OnboardingData): string | null {
       return data.activity_modalities.length > 0 ? null : 'Select at least one goal to continue.';
     case 'goal_gym':
       return validateModalityFields('gym', data);
-    case 'goal_yoga': {
-      const g = data.goal_details.yoga;
-      if (!g?.experience)                    return 'Please tell us about your yoga experience.';
-      if (!g?.goals?.length)                 return 'Please select at least one yoga goal.';
-      return null;
-    }
-    case 'goal_cardio': {
-      const g = data.goal_details.cardio;
-      if (!g?.baseline)                      return 'Please describe your current cardio baseline.';
-      if (!g?.goal)                          return 'Please select your main cardio goal.';
-      return null;
-    }
+    case 'goal_yoga':
+      return validateModalityFields('yoga', data);
+    case 'goal_cardio':
+      return validateModalityFields('cardio', data);
     case 'goal_home': {
       const g = data.goal_details.home;
       const hasGym = data.activity_modalities.includes('gym');
@@ -1491,8 +1341,8 @@ export function OnboardingPage() {
       case 'intention':         return <StepIntention data={data} set={set} />;
       case 'goal_selection':    return <StepGoalSelection data={data} set={set} />;
       case 'goal_gym':          return <StepGoalModality modality="gym" data={data} set={set} />;
-      case 'goal_yoga':         return <StepGoalYoga data={data} set={set} />;
-      case 'goal_cardio':       return <StepGoalCardio data={data} set={set} />;
+      case 'goal_yoga':         return <StepGoalModality modality="yoga" data={data} set={set} />;
+      case 'goal_cardio':       return <StepGoalModality modality="cardio" data={data} set={set} />;
       case 'goal_home':         return <StepGoalHome data={data} set={set} />;
       case 'goal_physio':       return <StepGoalPhysio data={data} set={set} />;
       case 'goal_diet':         return <StepGoalDiet data={data} set={set} />;
