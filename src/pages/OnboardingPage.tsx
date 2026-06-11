@@ -10,6 +10,11 @@ import type {
   HomeDetails, PhysioDetails, DietDetails, SupplementDetails, ConcernsDetails,
   OnboardingData, OnboardingTrackingConfig,
 } from '../types';
+import { TRACKERS } from '../config/trackers';
+import { COUNTRIES } from '../config/countries/countries';
+import { getCuisineOptions } from '../config/countries/cuisines';
+import { getSupplementBudgetOptions } from '../config/countries/currencies';
+import { detectTimezone, detectCountry } from '../config/countries/timezone-detect';
 
 // ========== STEP TYPES ==========
 
@@ -33,122 +38,7 @@ const GOAL_MODALITIES: { id: GoalModality; label: string; description: string; i
   { id: 'concerns',    label: 'Other Health Concerns',        description: 'PCOS, thyroid, BP, immunity, hair, skin & more',      icon: '➕', tag: 'Add-on' },
 ];
 
-const TRACKERS = [
-  { id: 'workouts',     label: 'Workouts',           description: 'Log exercises, sets, reps, and weights' },
-  { id: 'steps',        label: 'Steps & Distance',   description: 'Daily step count and distance' },
-  { id: 'meals',        label: 'Meals & Diet',       description: 'What you eat each day' },
-  { id: 'macros',       label: 'Macros',             description: 'Protein, carbs, fat, calories' },
-  { id: 'supplements',  label: 'Supplements',        description: 'Daily supplement check-off' },
-  { id: 'measurements', label: 'Body Measurements',  description: 'Weight, waist, chest, hips' },
-  { id: 'vitals',       label: 'Vitals',             description: 'Blood pressure, heart rate, blood sugar' },
-  { id: 'sleep',        label: 'Sleep',              description: 'Bedtime, wake time, quality' },
-  { id: 'water',        label: 'Water Intake',       description: 'Daily hydration' },
-  { id: 'mood',         label: 'Mood & Energy',      description: 'Daily energy and mood rating' },
-];
-
-const COUNTRIES = [
-  'India', 'United States', 'United Kingdom', 'Canada', 'Australia',
-  'UAE', 'Singapore', 'New Zealand', 'Pakistan', 'Bangladesh',
-  'Sri Lanka', 'Nepal', 'Germany', 'Netherlands', 'France',
-  'Italy', 'Spain', 'Switzerland', 'Sweden', 'Norway',
-  'Qatar', 'Kuwait', 'Saudi Arabia', 'Bahrain', 'Oman',
-  'Malaysia', 'South Africa', 'Kenya', 'Nigeria', 'Ireland',
-];
-
 const MODALITY_ORDER: GoalModality[] = ['gym', 'yoga', 'cardio', 'home', 'physio', 'diet', 'supplements', 'concerns'];
-
-const SOUTH_ASIA_COUNTRIES = ['India', 'Pakistan', 'Bangladesh', 'Sri Lanka', 'Nepal'];
-const MIDDLE_EAST_COUNTRIES = ['UAE', 'Qatar', 'Kuwait', 'Saudi Arabia', 'Bahrain', 'Oman'];
-const SOUTHEAST_ASIA_COUNTRIES = ['Singapore', 'Malaysia'];
-
-const COMMON_CUISINE_OPTIONS = [
-  { id: 'continental',  label: 'Continental / Western' },
-  { id: 'high_protein', label: 'High-protein snacks' },
-  { id: 'quick_prep',   label: 'Quick / low-effort meals' },
-];
-
-function getCuisineOptions(country: string): { id: string; label: string }[] {
-  if (SOUTH_ASIA_COUNTRIES.includes(country)) {
-    return [
-      { id: 'north_indian',    label: 'North Indian' },
-      { id: 'south_indian',    label: 'South Indian' },
-      { id: 'bengali',         label: 'Bengali / East Indian' },
-      { id: 'gujarati',        label: 'Gujarati / Rajasthani' },
-      { id: 'maharashtrian',   label: 'Maharashtrian' },
-      ...COMMON_CUISINE_OPTIONS,
-    ];
-  }
-  if (MIDDLE_EAST_COUNTRIES.includes(country)) {
-    return [
-      { id: 'levantine',   label: 'Levantine (Lebanese, Syrian)' },
-      { id: 'gulf',        label: 'Gulf / Khaleeji' },
-      { id: 'egyptian',    label: 'Egyptian / North African' },
-      { id: 'south_asian', label: 'South Asian' },
-      ...COMMON_CUISINE_OPTIONS,
-    ];
-  }
-  if (SOUTHEAST_ASIA_COUNTRIES.includes(country)) {
-    return [
-      { id: 'malay',   label: 'Malay' },
-      { id: 'chinese', label: 'Chinese' },
-      { id: 'indian',  label: 'Indian' },
-      { id: 'thai',    label: 'Thai / Southeast Asian' },
-      ...COMMON_CUISINE_OPTIONS,
-    ];
-  }
-  return [
-    { id: 'mediterranean', label: 'Mediterranean' },
-    { id: 'asian',         label: 'Asian-inspired' },
-    { id: 'latin',         label: 'Latin American' },
-    ...COMMON_CUISINE_OPTIONS,
-  ];
-}
-
-const CURRENCY_INFO: Record<string, { symbol: string; tiers: [number, number, number] }> = {
-  'India':          { symbol: '₹',   tiers: [500, 1500, 3000] },
-  'United States':  { symbol: '$',   tiers: [20, 50, 100] },
-  'United Kingdom': { symbol: '£',   tiers: [15, 40, 80] },
-  'Canada':         { symbol: 'C$',  tiers: [25, 65, 130] },
-  'Australia':      { symbol: 'A$',  tiers: [30, 75, 150] },
-  'UAE':            { symbol: 'AED', tiers: [75, 200, 400] },
-  'Singapore':      { symbol: 'S$',  tiers: [25, 70, 140] },
-  'New Zealand':    { symbol: 'NZ$', tiers: [30, 80, 160] },
-  'Pakistan':       { symbol: '₨',   tiers: [3000, 8000, 15000] },
-  'Bangladesh':     { symbol: '৳',   tiers: [2000, 5000, 10000] },
-  'Sri Lanka':      { symbol: 'Rs',  tiers: [4000, 10000, 20000] },
-  'Nepal':          { symbol: 'Rs',  tiers: [3000, 8000, 15000] },
-  'Germany':        { symbol: '€',   tiers: [20, 50, 100] },
-  'Netherlands':    { symbol: '€',   tiers: [20, 50, 100] },
-  'France':         { symbol: '€',   tiers: [20, 50, 100] },
-  'Italy':          { symbol: '€',   tiers: [20, 50, 100] },
-  'Spain':          { symbol: '€',   tiers: [20, 50, 100] },
-  'Switzerland':    { symbol: 'CHF', tiers: [25, 60, 120] },
-  'Sweden':         { symbol: 'kr',  tiers: [200, 500, 1000] },
-  'Norway':         { symbol: 'kr',  tiers: [200, 500, 1000] },
-  'Qatar':          { symbol: 'QR',  tiers: [75, 200, 400] },
-  'Kuwait':         { symbol: 'KD',  tiers: [7, 18, 35] },
-  'Saudi Arabia':   { symbol: 'SR',  tiers: [75, 200, 400] },
-  'Bahrain':        { symbol: 'BD',  tiers: [7, 18, 35] },
-  'Oman':           { symbol: 'OMR', tiers: [7, 18, 35] },
-  'Malaysia':       { symbol: 'RM',  tiers: [80, 220, 450] },
-  'South Africa':   { symbol: 'R',   tiers: [350, 900, 1800] },
-  'Kenya':          { symbol: 'KSh', tiers: [2500, 6500, 13000] },
-  'Nigeria':        { symbol: '₦',   tiers: [8000, 20000, 40000] },
-  'Ireland':        { symbol: '€',   tiers: [20, 50, 100] },
-};
-
-const DEFAULT_CURRENCY: { symbol: string; tiers: [number, number, number] } = { symbol: '$', tiers: [20, 50, 100] };
-
-function getSupplementBudgetOptions(country: string): { value: string; label: string }[] {
-  const { symbol, tiers } = CURRENCY_INFO[country] ?? DEFAULT_CURRENCY;
-  const [t1, t2, t3] = tiers;
-  return [
-    { value: 'under_500', label: `Under ${symbol}${t1.toLocaleString()}` },
-    { value: '500_1500',  label: `${symbol}${t1.toLocaleString()}–${symbol}${t2.toLocaleString()}` },
-    { value: '1500_3000', label: `${symbol}${t2.toLocaleString()}–${symbol}${t3.toLocaleString()}` },
-    { value: 'no_limit',  label: 'No strict limit' },
-  ];
-}
 
 const EMPTY_DATA: OnboardingData = {
   display_name: '',
@@ -173,38 +63,6 @@ const EMPTY_DATA: OnboardingData = {
 };
 
 // ========== UTILITIES ==========
-
-function detectTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function detectCountry(): string {
-  try {
-    const tz = detectTimezone();
-    if (/Kolkata|Calcutta/.test(tz))                                       return 'India';
-    if (/Karachi/.test(tz))                                                return 'Pakistan';
-    if (/Dhaka/.test(tz))                                                  return 'Bangladesh';
-    if (/Colombo/.test(tz))                                                return 'Sri Lanka';
-    if (/Kathmandu/.test(tz))                                              return 'Nepal';
-    if (/Dubai|Abu_Dhabi|Muscat/.test(tz))                                 return 'UAE';
-    if (/Singapore/.test(tz))                                              return 'Singapore';
-    if (/Kuala_Lumpur/.test(tz))                                           return 'Malaysia';
-    if (/London/.test(tz))                                                 return 'United Kingdom';
-    if (/New_York|Chicago|Los_Angeles|Denver|Phoenix|Anchorage/.test(tz))  return 'United States';
-    if (/Toronto|Vancouver|Winnipeg/.test(tz))                             return 'Canada';
-    if (/Sydney|Melbourne|Brisbane|Perth|Adelaide/.test(tz))               return 'Australia';
-    if (/Auckland/.test(tz))                                               return 'New Zealand';
-    if (/Berlin|Frankfurt/.test(tz))                                       return 'Germany';
-    if (/Paris/.test(tz))                                                  return 'France';
-    if (/Riyadh/.test(tz))                                                 return 'Saudi Arabia';
-    if (/Doha/.test(tz))                                                   return 'Qatar';
-  } catch { /* fall through */ }
-  return '';
-}
 
 function buildStepSequence(path: 'plan' | 'track' | null, modalities: GoalModality[]): StepId[] {
   const base: StepId[] = ['about_you', 'intention'];
