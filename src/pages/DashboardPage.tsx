@@ -93,6 +93,7 @@ export function DashboardPage() {
 
   // Per-task inline logging
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
   const [taskDrafts, setTaskDrafts] = useState<Record<string, { value: string; notes: string }>>({});
 
   // Exercise set logging
@@ -694,81 +695,96 @@ export function DashboardPage() {
                         )}
 
                         {showExerciseLogger && (
-                          <div className="space-y-3">
-                            {todaysExercises.map(ex => (
-                              <div key={ex.name} className="bg-gray-900/50 border border-gray-700/50 rounded-xl p-3">
-                                <p className="text-sm font-medium text-white">{ex.name}</p>
-                                <p className="text-xs text-gray-500 mt-0.5">
-                                  Target: {ex.sets} x {ex.reps}
-                                  {ex.intensity_guidance ? ` — ${ex.intensity_guidance}` : ''}
-                                </p>
+                          <div className="space-y-2">
+                            {todaysExercises.map(ex => {
+                              const exExpanded = expandedExercise === ex.name;
+                              return (
+                                <div key={ex.name} className="bg-gray-900/50 border border-gray-700/50 rounded-xl">
+                                  <button
+                                    onClick={() => setExpandedExercise(prev => prev === ex.name ? null : ex.name)}
+                                    className="w-full flex items-center justify-between gap-2 p-2.5 text-left"
+                                  >
+                                    <div>
+                                      <p className="text-sm font-medium text-white">{ex.name}</p>
+                                      <p className="text-xs text-gray-500 mt-0.5">
+                                        Target: {ex.sets} x {ex.reps}
+                                        {ex.intensity_guidance ? ` — ${ex.intensity_guidance}` : ''}
+                                      </p>
+                                    </div>
+                                    {exExpanded ? <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />}
+                                  </button>
 
-                                {getExerciseType(ex) === 'reps_weight' ? (
-                                  <>
-                                    <div className="space-y-1.5 mt-2">
-                                      {(exerciseSets[ex.name] ?? []).map((set, i) => (
-                                        <div key={i} className="flex items-center gap-2">
-                                          <span className="text-xs text-gray-500 w-10">Set {i + 1}</span>
-                                          <input
-                                            type="number"
-                                            value={set.reps}
-                                            onChange={e => updateSet(ex.name, i, 'reps', Number(e.target.value))}
-                                            onBlur={() => handleSetBlur(ex.name)}
-                                            placeholder="Reps"
-                                            className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                          />
-                                          <span className="text-xs text-gray-500">reps ×</span>
-                                          <input
-                                            type="number"
-                                            value={set.weight}
-                                            onChange={e => updateSet(ex.name, i, 'weight', Number(e.target.value))}
-                                            onBlur={() => handleSetBlur(ex.name)}
-                                            placeholder="Weight"
-                                            className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                          />
-                                          <span className="text-xs text-gray-500">kg</span>
+                                  {exExpanded && (
+                                    <div className="px-2.5 pb-2.5">
+                                      {getExerciseType(ex) === 'reps_weight' ? (
+                                        <>
+                                          <div className="space-y-1.5">
+                                            {(exerciseSets[ex.name] ?? []).map((set, i) => (
+                                              <div key={i} className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500 w-10">Set {i + 1}</span>
+                                                <input
+                                                  type="number"
+                                                  value={set.reps}
+                                                  onChange={e => updateSet(ex.name, i, 'reps', Number(e.target.value))}
+                                                  onBlur={() => handleSetBlur(ex.name)}
+                                                  placeholder="Reps"
+                                                  className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                />
+                                                <span className="text-xs text-gray-500">reps ×</span>
+                                                <input
+                                                  type="number"
+                                                  value={set.weight}
+                                                  onChange={e => updateSet(ex.name, i, 'weight', Number(e.target.value))}
+                                                  onBlur={() => handleSetBlur(ex.name)}
+                                                  placeholder="Weight"
+                                                  className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                />
+                                                <span className="text-xs text-gray-500">kg</span>
+                                                <button
+                                                  onClick={() => removeSet(ex.name, i)}
+                                                  className="ml-auto text-gray-600 hover:text-red-400 transition-colors"
+                                                >
+                                                  <Minus className="w-4 h-4" />
+                                                </button>
+                                              </div>
+                                            ))}
+                                          </div>
+
                                           <button
-                                            onClick={() => removeSet(ex.name, i)}
-                                            className="ml-auto text-gray-600 hover:text-red-400 transition-colors"
+                                            onClick={() => addSet(ex.name)}
+                                            className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 mt-2 transition-colors"
                                           >
-                                            <Minus className="w-4 h-4" />
+                                            <Plus className="w-3.5 h-3.5" />
+                                            Add set
                                           </button>
+                                        </>
+                                      ) : (
+                                        <div className="space-y-2">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-500">Duration completed</span>
+                                            <input
+                                              type="number"
+                                              value={exerciseDuration[ex.name]?.minutes ?? 0}
+                                              onChange={e => updateExerciseDuration(ex.name, 'minutes', Number(e.target.value))}
+                                              onBlur={() => handleDurationBlur(ex.name)}
+                                              className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                            />
+                                            <span className="text-xs text-gray-500">min</span>
+                                          </div>
+                                          <textarea
+                                            value={exerciseDuration[ex.name]?.notes ?? ''}
+                                            onChange={e => updateExerciseDuration(ex.name, 'notes', e.target.value)}
+                                            onBlur={() => handleDurationBlur(ex.name)}
+                                            placeholder="Notes (optional) — how it felt, any details worth remembering"
+                                            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[40px] resize-y"
+                                          />
                                         </div>
-                                      ))}
+                                      )}
                                     </div>
-
-                                    <button
-                                      onClick={() => addSet(ex.name)}
-                                      className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 mt-2 transition-colors"
-                                    >
-                                      <Plus className="w-3.5 h-3.5" />
-                                      Add set
-                                    </button>
-                                  </>
-                                ) : (
-                                  <div className="space-y-2 mt-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-gray-500">Duration completed</span>
-                                      <input
-                                        type="number"
-                                        value={exerciseDuration[ex.name]?.minutes ?? 0}
-                                        onChange={e => updateExerciseDuration(ex.name, 'minutes', Number(e.target.value))}
-                                        onBlur={() => handleDurationBlur(ex.name)}
-                                        className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                      />
-                                      <span className="text-xs text-gray-500">min</span>
-                                    </div>
-                                    <textarea
-                                      value={exerciseDuration[ex.name]?.notes ?? ''}
-                                      onChange={e => updateExerciseDuration(ex.name, 'notes', e.target.value)}
-                                      onBlur={() => handleDurationBlur(ex.name)}
-                                      placeholder="Distance, pace, how it felt..."
-                                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[40px] resize-y"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
