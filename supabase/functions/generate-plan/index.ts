@@ -159,11 +159,38 @@ function buildNutritionRules(country: string, dietType: string, foodPrefs: strin
   return `Nutrition guidance must use ingredients and dishes that are realistically available and culturally familiar in ${country}. Build meals around locally accessible staples for that region — do not default to a different country's cuisine. Respect the user's diet type (${dietType}), cuisine preferences (${foodPrefs}) and dislikes (${foodDislikes}).${allergyLine}`;
 }
 
+// Health concerns that warrant a healthcare-provider consultation note and more
+// conservative plan intensity, per docs/architecture/03-system-audit-2026-06.md §5.1.
+const MAJOR_MEDICAL_CONCERNS = new Set([
+  "PCOS / hormonal imbalance",
+  "Thyroid",
+  "Diabetes risk / blood sugar",
+  "High blood pressure",
+  "High cholesterol",
+]);
+
+// Determines whether the plan must carry an explicit "consult your healthcare
+// provider" note (and lean conservative on intensity) based on flagged
+// medical concerns, on-medication status, or injuries needing physio attention.
+function getMedicalFlags(hp: Record<string, unknown>, physioAreas: string[]): string[] {
+  const flags: string[] = [];
+  const concernsDetails = ((hp.onboarding_details as Record<string, Record<string, unknown>> | undefined)?.concerns) ?? {};
+  const concernItems = Array.isArray(concernsDetails.items) ? (concernsDetails.items as string[]) : [];
+
+  const flaggedConcerns = concernItems.filter((c) => MAJOR_MEDICAL_CONCERNS.has(c));
+  if (flaggedConcerns.length > 0) flags.push(...flaggedConcerns);
+
+  if (concernsDetails.on_medication === "yes_some") flags.push("currently on medication");
+  if (physioAreas.length > 0) flags.push(`injury/pain requiring physio attention (${physioAreas.join(", ")})`);
+
+  return flags;
+}
+
 function buildSupplementGuidance(): string {
   return `When suggesting supplements, recommend categories and what to look for — NOT specific commercial brands or products. Stay unbiased and do not endorse any brand or manufacturer. For each item, explain why it fits this person's goals, lifestyle and budget, and describe what to check for when buying locally (e.g. third-party testing, label transparency, typical price range in their region) instead of naming a brand.`;
 }
 
-function buildPrompt(hp: Record<string, unknown>): string {
+function buildPrompt(hp: Record<string, unknown>): { prompt: string; requiresMedicalDisclaimer: boolean } {
   const modalities = (Array.isArray(hp.activity_modalities) ? hp.activity_modalities : []) as string[];
   const details = (hp.onboarding_details ?? {}) as Record<string, Record<string, unknown>>;
 
@@ -232,7 +259,12 @@ function buildPrompt(hp: Record<string, unknown>): string {
     ? `The user did NOT select ${addOnAreas.join(", ")} as part of their regime. Do not generate full plan/tracking content for these areas — instead add a "suggested_addons" array with a 1-2 sentence note per area on why adding it could help them reach their goal (so they can opt in later). Schema: "suggested_addons": [{ "area": "string", "reason": "string" }]`
     : `The user opted into every major plan area — omit "suggested_addons" entirely.`;
 
-  return `You are an expert fitness coach and dietician creating a personalised plan for someone in ${country}.
+  const medicalFlags = getMedicalFlags(hp, physioAreas);
+  const medicalSafetyInstruction = medicalFlags.length > 0
+    ? `\nMEDICAL SAFETY (required): This person has flagged the following: ${medicalFlags.join("; ")}. You MUST include a clear, specific sentence in "personalized_notes" recommending they consult their doctor or a qualified healthcare provider before starting this plan, given these factors. Bias workout intensity, exercise selection and nutrition guidance conservatively where it touches these areas.`
+    : "";
+
+  const prompt = `You are an expert fitness coach and dietician creating a personalised plan for someone in ${country}.
 
 USER PROFILE
 Age: ${hp.age ?? "unknown"} | Gender: ${hp.gender ?? "unspecified"}
@@ -265,14 +297,17 @@ PLAN SECTIONS TO GENERATE
 ${sections.join("\n")}
 
 ${addOnInstruction}
+${medicalSafetyInstruction}
 
 IMPORTANT: Return ONLY a raw JSON object matching this shape — no markdown, no code fences, no explanation text. Start with { and end with }.
 {
   "phase": number, "phase_name": "string", "phase_description": "2-3 sentences",
-  "duration_months": number, "personalized_notes": "3-4 sentences of specific advice tailored to this person",
+  "duration_months": number, "personalized_notes": "3-4 sentences of specific advice tailored to this person${medicalFlags.length ? ", including the required healthcare-consultation note" : ""}",
   "calorie_target": number, "protein_target_g": number,
   ${schemaFields.join(",\n  ")}${addOnAreas.length ? ",\n  \"suggested_addons\": [{ \"area\": \"string\", \"reason\": \"string\" }]" : ""}
 }`;
+
+  return { prompt, requiresMedicalDisclaimer: medicalFlags.length > 0 };
 }
 
 Deno.serve(async (req: Request) => {
@@ -353,7 +388,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const hpForPrompt = { ...hp, country: profile?.country };
-    const prompt = buildPrompt(hpForPrompt);
+    const { prompt, requiresMedicalDisclaimer } = buildPrompt(hpForPrompt);
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiApiKey) {
@@ -454,6 +489,16 @@ Deno.serve(async (req: Request) => {
         throw new Error("AI returned an invalid plan. Please try again.");
       }
       planData = validationResult.data;
+
+      // Enforce the medical-safety guardrail: if the prompt required a
+      // healthcare-consultation note, make sure the model actually included one.
+      if (requiresMedicalDisclaimer) {
+        const notes = (planData.personalized_notes as string).toLowerCase();
+        if (!/(consult|doctor|physician|healthcare|health care|medical professional)/.test(notes)) {
+          console.error("Missing required medical-safety note in personalized_notes");
+          throw new Error("AI returned an invalid plan. Please try again.");
+        }
+      }
     } catch (aiErr) {
       console.error("Gemini AI error:", aiErr);
       const msg = aiErr instanceof Error ? aiErr.message : "AI generation failed. Please try again.";
