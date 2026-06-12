@@ -115,7 +115,6 @@ export function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
 
     const [tasksData, logsData, streakData, exerciseLogsData] = await Promise.all([
       DailyTaskRepository.getForDate(user.id, todayDate),
@@ -177,7 +176,7 @@ export function DashboardPage() {
     if (existingLog) setDailyLog(existingLog);
 
     setLoading(false);
-  }, [user, todayDate]);
+  }, [user?.id, todayDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
