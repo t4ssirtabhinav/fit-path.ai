@@ -48,17 +48,18 @@ function sanitizeUserInput(input: string, maxLen: number): string {
 
 // Zod schemas for validating AI response
 const ExerciseSchema = z.object({
-  name: z.string(),
+  name: z.string().min(1),
   sets: z.coerce.number(),
   reps: z.string(),
   rest_seconds: z.coerce.number(),
-  notes: z.string().optional(),
+  intensity_guidance: z.string().min(1),
+  progression_notes: z.string().min(1),
 });
 
 const WorkoutSchema = z.object({
   name: z.string(),
   duration_minutes: z.coerce.number(),
-  exercises: z.array(ExerciseSchema).min(1),
+  exercises: z.array(ExerciseSchema).min(3),
   notes: z.string().optional(),
 });
 
@@ -194,6 +195,17 @@ function getMedicalFlags(hp: Record<string, unknown>, physioAreas: string[]): st
   return flags;
 }
 
+// Per-modality guidance on what "exercises" should represent and where to put
+// intensity/pacing detail — keeps the unified Exercise schema meaningful across
+// strength, bodyweight, rehab, yoga and cardio sessions.
+const WORKOUT_STRUCTURE_GUIDANCE: Record<string, string> = {
+  gym: `For gym/strength sessions, list specific exercises (e.g. "Barbell Back Squat", "Incline Dumbbell Press") with concrete sets/reps and an "intensity_guidance" giving a weight range, %1RM, or RPE target appropriate to the user's experience level.`,
+  home: `For home workout sessions, list specific bodyweight or equipment-based exercises (e.g. "Push-ups", "Resistance Band Rows") with concrete sets/reps and an "intensity_guidance" describing tempo, variation, or resistance level to use.`,
+  physio: `For physiotherapy/rehab sessions, list specific rehab exercises targeting the flagged areas (e.g. "Glute Bridge", "Wall Slides") with concrete sets/reps and an "intensity_guidance" describing pain-monitoring guidance (e.g. "stop if pain exceeds 3/10").`,
+  yoga: `For yoga sessions, list specific poses/sequences (e.g. "Downward Dog", "Warrior II") as "exercises" — put the hold duration in "reps" (e.g. "30-45 sec hold") and put alignment/breathing cues in "intensity_guidance".`,
+  cardio: `For cardio sessions, list specific activities/intervals (e.g. "Brisk walk", "Incline treadmill interval") as "exercises" — put the duration in "reps" (e.g. "20 min") and put pace/heart-rate-zone guidance in "intensity_guidance".`,
+};
+
 function buildSupplementGuidance(): string {
   return `When suggesting supplements, recommend categories and what to look for — NOT specific commercial brands or products. Stay unbiased and do not endorse any brand or manufacturer. For each item, explain why it fits this person's goals, lifestyle and budget, and describe what to check for when buying locally (e.g. third-party testing, label transparency, typical price range in their region) instead of naming a brand.`;
 }
@@ -234,9 +246,11 @@ function buildPrompt(hp: Record<string, unknown>): { prompt: string; requiresMed
   const addOnAreas: string[] = [];
 
   if (hasWorkout) {
-    const selectedWorkoutModalities = modalities.filter((m) => getPromptInfo(m)?.isWorkoutModality ?? false).map((m) => getPromptInfo(m)?.label ?? m);
-    sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}) at roughly ${commitmentDays} active sessions/week. If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Mark non-active days as rest days.`);
-    schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number }] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
+    const selectedWorkoutModalityIds = modalities.filter((m) => getPromptInfo(m)?.isWorkoutModality ?? false);
+    const selectedWorkoutModalities = selectedWorkoutModalityIds.map((m) => getPromptInfo(m)?.label ?? m);
+    const structureGuidance = selectedWorkoutModalityIds.map((m) => WORKOUT_STRUCTURE_GUIDANCE[m]).filter(Boolean).join(" ");
+    sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}) at roughly ${commitmentDays} active sessions/week. If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Mark non-active days as rest days. Every active workout day must list at least 3 concrete, specifically-named exercises/poses/activities — never a single vague placeholder like "Upper Body Workout" as an exercise (that belongs in the workout's "name" field, not its exercise list). For every exercise, "intensity_guidance" must give concrete, actionable guidance calibrated to this person's stated experience/fitness level, and "progression_notes" must describe how to advance that exercise across this plan's duration. ${structureGuidance}`);
+    schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number, "intensity_guidance": "string", "progression_notes": "string" }, ... at least 3 exercises ...] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
   } else {
     addOnAreas.push("structured workouts");
   }
@@ -584,7 +598,7 @@ async function seedTodaysTasks(
   }> = [];
   let orderIdx = 0;
 
-  const schedule = (planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }> | undefined)?.[dayName];
+  const schedule = (planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string; intensity_guidance?: string }> } }> | undefined)?.[dayName];
 
   if (schedule) {
     if (schedule.is_rest_day) {
@@ -598,7 +612,7 @@ async function seedTodaysTasks(
       tasks.push({
         user_id: userId, plan_id: planId, task_date: today,
         category: "workout", title: schedule.workout.name,
-        description: schedule.workout.exercises.map((e: { name: string; sets: number; reps: string }) => `${e.name}: ${e.sets}x${e.reps}`).join(" • "),
+        description: schedule.workout.exercises.map((e: { name: string; sets: number; reps: string; intensity_guidance?: string }) => `${e.name}: ${e.sets}x${e.reps}${e.intensity_guidance ? ` — ${e.intensity_guidance}` : ''}`).join(" • "),
         order_index: orderIdx++, is_rest_day: false,
       });
     }

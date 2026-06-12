@@ -66,7 +66,8 @@ export interface Exercise {
   sets: number;
   reps: string;
   rest_seconds: number;
-  notes?: string;
+  intensity_guidance?: string;
+  progression_notes?: string;
 }
 
 export interface MealPlan {

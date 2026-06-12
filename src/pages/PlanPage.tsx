@@ -161,11 +161,15 @@ export function PlanPage() {
                         {workout.duration_minutes} min
                       </div>
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       {workout.exercises.map((ex, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs">
-                          <span className="text-gray-300">{ex.name}</span>
-                          <span className="text-gray-500">{ex.sets}x{ex.reps}</span>
+                        <div key={i}>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-300">{ex.name}</span>
+                            <span className="text-gray-500">{ex.sets}x{ex.reps}</span>
+                          </div>
+                          {ex.intensity_guidance && <p className="text-xs text-gray-500 mt-0.5">{ex.intensity_guidance}</p>}
+                          {ex.progression_notes && <p className="text-xs text-emerald-400/70 mt-0.5 italic">{ex.progression_notes}</p>}
                         </div>
                       ))}
                     </div>

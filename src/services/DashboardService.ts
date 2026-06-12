@@ -18,13 +18,13 @@ export const DashboardService = {
     const tasks: DailyTaskInsert[] = [];
     let idx = 0;
 
-    const scheduleMap = planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }> | undefined;
+    const scheduleMap = planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string; intensity_guidance?: string }> } }> | undefined;
     const schedule = scheduleMap?.[dayName];
     if (schedule) {
       if (schedule.is_rest_day) {
         tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'habit', title: 'Rest & Recovery Day', description: 'Light walk, stretching, or yoga. Let your muscles recover.', order_index: idx++, is_rest_day: true });
       } else if (schedule.workout) {
-        tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'workout', title: schedule.workout.name, description: schedule.workout.exercises.map((e) => `${e.name}: ${e.sets}x${e.reps}`).join(' • '), order_index: idx++, is_rest_day: false });
+        tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'workout', title: schedule.workout.name, description: schedule.workout.exercises.map((e) => `${e.name}: ${e.sets}x${e.reps}${e.intensity_guidance ? ` — ${e.intensity_guidance}` : ''}`).join(' • '), order_index: idx++, is_rest_day: false });
       }
     } else if (scheduleMap) {
       // Fallback: if the day is missing from schedule, treat as rest day

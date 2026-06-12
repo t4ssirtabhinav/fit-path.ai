@@ -9,7 +9,8 @@ const ExerciseSchema = z.object({
   sets: z.number(),
   reps: z.string(),
   rest_seconds: z.number(),
-  notes: z.string().optional(),
+  intensity_guidance: z.string().optional(),
+  progression_notes: z.string().optional(),
 });
 
 const WorkoutSchema = z.object({
