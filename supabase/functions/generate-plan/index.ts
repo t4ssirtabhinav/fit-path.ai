@@ -1,7 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
+import * as Sentry from "npm:@sentry/deno";
 import { getPromptInfo } from "../../../src/config/modalities/shared.ts";
+
+// No-op if SENTRY_DSN isn't configured — Sentry's SDK methods become safe
+// no-ops when uninitialized.
+const sentryDsn = Deno.env.get("SENTRY_DSN");
+if (sentryDsn) {
+  Sentry.init({ dsn: sentryDsn, tracesSampleRate: 0.1 });
+}
 
 const DEV_ORIGINS = [
   "http://localhost:5173",
@@ -501,6 +509,8 @@ Deno.serve(async (req: Request) => {
       }
     } catch (aiErr) {
       console.error("Gemini AI error:", aiErr);
+      Sentry.captureException(aiErr);
+      await Sentry.flush(2000);
       const msg = aiErr instanceof Error ? aiErr.message : "AI generation failed. Please try again.";
       return new Response(JSON.stringify({ error: msg }), {
         status: 502, headers: { ...ch, "Content-Type": "application/json" },
@@ -541,6 +551,8 @@ Deno.serve(async (req: Request) => {
     });
   } catch (e: unknown) {
     console.error("generate-plan error:", e);
+    Sentry.captureException(e);
+    await Sentry.flush(2000);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Internal server error" }), {
       status: 500, headers: { ...ch, "Content-Type": "application/json" },
     });
