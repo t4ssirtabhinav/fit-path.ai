@@ -13,6 +13,7 @@ export interface Database {
           country: string | null;
           invite_code: string | null;
           timezone: string;
+          phone_number: string | null;
           last_onboarded_at: string | null;
           created_at: string;
           updated_at: string;
@@ -26,6 +27,7 @@ export interface Database {
           country?: string | null;
           invite_code?: string | null;
           timezone?: string;
+          phone_number?: string | null;
           last_onboarded_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -39,6 +41,7 @@ export interface Database {
           country?: string | null;
           invite_code?: string | null;
           timezone?: string;
+          phone_number?: string | null;
           last_onboarded_at?: string | null;
           updated_at?: string;
         };
