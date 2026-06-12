@@ -7,24 +7,26 @@ import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
 import { DailyLogRepository } from '../repositories/DailyLogRepository';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, addDays } from 'date-fns';
+import { today, DEFAULT_TIMEZONE } from '../lib/utils';
 import type { DailyLog } from '../types';
 
 interface Measurement { measured_at: string; weight_kg: number | null; waist_cm: number | null; }
 interface DayActivity { date: string; completed: number; total: number; pct: number; }
 
 export function ProgressPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const tz = profile?.timezone ?? DEFAULT_TIMEZONE;
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [activity, setActivity] = useState<DayActivity[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [, setLoading] = useState(true);
 
   // Historical date view
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedDate, setSelectedDate] = useState(today(tz));
   const [dateLog, setDateLog] = useState<DailyLog | null>(null);
   const [dateTasks, setDateTasks] = useState<{ category: string; title: string; completed: boolean }[]>([]);
 
-  const isToday = selectedDate === format(new Date(), 'yyyy-MM-dd');
+  const isToday = selectedDate === today(tz);
 
   useEffect(() => {
     if (!user) return;
@@ -229,7 +231,7 @@ export function ProgressPage() {
             {activity.map(day => {
               const date = parseISO(day.date);
               const isSelected = day.date === selectedDate;
-              const isCurrentDay = day.date === format(new Date(), 'yyyy-MM-dd');
+              const isCurrentDay = day.date === today(tz);
               const color = day.total === 0 ? 'bg-gray-800' :
                 day.pct >= 80 ? 'bg-emerald-500' :
                 day.pct >= 50 ? 'bg-amber-500' : 'bg-red-500/60';
