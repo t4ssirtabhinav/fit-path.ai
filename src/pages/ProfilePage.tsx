@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X, FileText, Lock, Eye, EyeOff, Camera } from 'lucide-react';
+import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X, FileText, Lock, Eye, EyeOff, Camera, ListChecks } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
@@ -11,6 +11,8 @@ import { HealthProfileRepository } from '../repositories/HealthProfileRepository
 import { PlanRepository } from '../repositories/PlanRepository';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
+import { TrackingConfigRepository } from '../repositories/TrackingConfigRepository';
+import { TRACKERS } from '../config/trackers';
 import { useHealthProfile } from '../hooks/useHealthProfile';
 
 interface PlanHistoryItem {
@@ -44,10 +46,43 @@ export function ProfilePage() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
 
+  const [selectedTrackers, setSelectedTrackers] = useState<string[]>([]);
+  const [reminderMorning, setReminderMorning] = useState('');
+  const [reminderEvening, setReminderEvening] = useState('');
+  const [savingTrackers, setSavingTrackers] = useState(false);
+  const [trackersSaved, setTrackersSaved] = useState(false);
+
   useEffect(() => {
     if (!user) return;
     PlanRepository.getHistory(user.id).then(setPlanHistory);
   }, [user]);
+
+  useEffect(() => {
+    if (!user || profile?.onboarding_path !== 'track') return;
+    TrackingConfigRepository.getForUser(user.id).then(config => {
+      if (!config) return;
+      setSelectedTrackers(config.selected_trackers);
+      setReminderMorning(config.reminder_morning ?? '');
+      setReminderEvening(config.reminder_evening ?? '');
+    });
+  }, [user, profile?.onboarding_path]);
+
+  function toggleTracker(id: string) {
+    setTrackersSaved(false);
+    setSelectedTrackers(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
+  }
+
+  async function saveTrackingConfig() {
+    if (!user) return;
+    setSavingTrackers(true);
+    await TrackingConfigRepository.upsert(user.id, {
+      selected_trackers: selectedTrackers,
+      reminder_morning: reminderMorning || null,
+      reminder_evening: reminderEvening || null,
+    });
+    setSavingTrackers(false);
+    setTrackersSaved(true);
+  }
 
   async function saveName() {
     if (!user || !newName.trim()) return;
@@ -296,6 +331,76 @@ export function ProfilePage() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tracking settings (track-only users) */}
+      {profile?.onboarding_path === 'track' && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ListChecks className="w-4 h-4 text-gray-400" />
+              <h2 className="text-sm font-semibold text-white">Tracking Setup</h2>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-3">
+            <p className="text-xs text-gray-500">Choose what you want to log on your Today page.</p>
+            <div className="space-y-2">
+              {TRACKERS.map(t => {
+                const active = selectedTrackers.includes(t.id);
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => toggleTracker(t.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-200 text-left ${
+                      active ? 'bg-emerald-500/10 border-emerald-500/60' : 'bg-gray-800 border-gray-700 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-white">{t.label}</p>
+                      <p className="text-xs text-gray-500">{t.description}</p>
+                    </div>
+                    <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                      active ? 'bg-emerald-500 border-emerald-500' : 'border-gray-600'
+                    }`}>
+                      {active && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Morning reminder</label>
+                <input
+                  type="time"
+                  value={reminderMorning}
+                  onChange={e => { setReminderMorning(e.target.value); setTrackersSaved(false); }}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Evening reminder</label>
+                <input
+                  type="time"
+                  value={reminderEvening}
+                  onChange={e => { setReminderEvening(e.target.value); setTrackersSaved(false); }}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+            {trackersSaved && (
+              <p className="text-xs text-emerald-400">Tracking setup saved. New choices apply from tomorrow's checklist onward.</p>
+            )}
+            <Button size="sm" onClick={saveTrackingConfig} loading={savingTrackers} disabled={selectedTrackers.length === 0}>
+              Save tracking setup
+            </Button>
           </CardContent>
         </Card>
       )}

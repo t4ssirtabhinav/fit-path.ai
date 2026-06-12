@@ -1,10 +1,40 @@
 import { parsePlanData } from '../lib/planSchema';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
+import { today } from '../lib/utils';
+import type { DailyTask } from '../types';
 import type { Database } from '../types/database';
 
 type DailyTaskInsert = Database['public']['Tables']['daily_tasks']['Insert'];
 
+const TRACKER_TASKS: Record<string, { category: DailyTask['category']; title: string; description: string }> = {
+  workouts: { category: 'workout', title: 'Log your workout', description: "Record the exercises, sets, reps, and weights from today's session." },
+  steps: { category: 'habit', title: 'Log steps & distance', description: 'Track how much you moved today.' },
+  meals: { category: 'meal', title: 'Log your meals', description: 'Note what you ate today using the Log notes button.' },
+  macros: { category: 'meal', title: 'Log your macros', description: 'Track protein, carbs, fat, and calories.' },
+  supplements: { category: 'supplement', title: 'Log supplements', description: 'Check off the supplements you took today.' },
+  measurements: { category: 'habit', title: 'Log body measurements', description: 'Use the Log weight button to record weight, waist, and other measurements.' },
+  vitals: { category: 'habit', title: 'Log vitals', description: 'Record blood pressure, heart rate, or blood sugar via Log notes.' },
+  sleep: { category: 'sleep', title: 'Log sleep', description: 'Note your bedtime, wake time, and sleep quality.' },
+  water: { category: 'habit', title: 'Log water intake', description: 'Track how much water you drank today.' },
+  mood: { category: 'habit', title: 'Log mood & energy', description: 'Rate your energy level using the Log notes button.' },
+};
+
 export const DashboardService = {
+  async seedTrackingTasks(userId: string, selectedTrackers: string[], timezone: string): Promise<void> {
+    const todayStr = today(timezone);
+    if (await DailyTaskRepository.hasTasksForDate(userId, todayStr)) return;
+
+    const tasks: DailyTaskInsert[] = selectedTrackers
+      .map((id, idx): DailyTaskInsert | null => {
+        const cfg = TRACKER_TASKS[id];
+        if (!cfg) return null;
+        return { user_id: userId, task_date: todayStr, ...cfg, order_index: idx, is_rest_day: false };
+      })
+      .filter((t): t is DailyTaskInsert => t !== null);
+
+    await DailyTaskRepository.seedTasks(tasks);
+  },
+
   async seedTasksFromPlan(userId: string, planId: string, rawPlanData: unknown, timezone: string): Promise<void> {
     const planData = parsePlanData(rawPlanData);
     if (!planData) return;

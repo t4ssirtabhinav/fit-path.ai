@@ -13,6 +13,7 @@ import { StreakRepository } from '../repositories/StreakRepository';
 import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
 import { DailyLogRepository } from '../repositories/DailyLogRepository';
 import { ExerciseLogRepository } from '../repositories/ExerciseLogRepository';
+import { TrackingConfigRepository } from '../repositories/TrackingConfigRepository';
 import { BuddyRepository } from '../repositories/BuddyRepository';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { StreakService } from '../services/StreakService';
@@ -129,13 +130,22 @@ export function DashboardPage() {
     setTasks(enriched);
     setStreak(streakData);
 
-    // If no tasks today, try to seed from active plan
+    // If no tasks today, try to seed from active plan (or tracking config for track-only users)
     if (enriched.length === 0) {
-      const plan = await PlanRepository.getActivePlan(user.id);
-      if (plan) {
-        await DashboardService.seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
-        const newTasks = await DailyTaskRepository.getForDate(user.id, todayDate);
-        setTasks(newTasks.map(t => ({ ...t, log: undefined })));
+      if (profile?.onboarding_path === 'track') {
+        const trackingConfig = await TrackingConfigRepository.getForUser(user.id);
+        if (trackingConfig && trackingConfig.selected_trackers.length > 0) {
+          await DashboardService.seedTrackingTasks(user.id, trackingConfig.selected_trackers, tz);
+          const newTasks = await DailyTaskRepository.getForDate(user.id, todayDate);
+          setTasks(newTasks.map(t => ({ ...t, log: undefined })));
+        }
+      } else {
+        const plan = await PlanRepository.getActivePlan(user.id);
+        if (plan) {
+          await DashboardService.seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
+          const newTasks = await DailyTaskRepository.getForDate(user.id, todayDate);
+          setTasks(newTasks.map(t => ({ ...t, log: undefined })));
+        }
       }
     }
 
