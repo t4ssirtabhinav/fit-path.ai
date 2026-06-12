@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Dumbbell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/Button';
@@ -7,6 +7,8 @@ import { Input } from '../components/ui/Input';
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const successMessage = (location.state as { message?: string } | null)?.message;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -69,6 +71,12 @@ export function LoginPage() {
 
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
           <h2 className="text-xl font-semibold text-white mb-6">Sign in</h2>
+
+          {successMessage && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 mb-4">
+              <p className="text-emerald-400 text-sm">{successMessage}</p>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
@@ -135,6 +143,12 @@ export function LoginPage() {
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
+            </div>
+
+            <div className="flex justify-end">
+              <Link to="/forgot-password" className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                Forgot password?
+              </Link>
             </div>
 
             <Button type="submit" className="w-full mt-2" size="lg" loading={loading}>
