@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X, FileText } from 'lucide-react';
+import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X, FileText, Lock, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { HealthProfileRepository } from '../repositories/HealthProfileRepository';
 import { PlanRepository } from '../repositories/PlanRepository';
@@ -33,6 +34,13 @@ export function ProfilePage() {
   const [phoneError, setPhoneError] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -67,6 +75,23 @@ export function ProfilePage() {
     await ProfileRepository.update(user.id, { phone_number: next });
     await refreshProfile();
     setSavingPhone(false);
+  }
+
+  async function changePassword() {
+    if (newPassword.length < 8) { setPasswordError('Password must be at least 8 characters.'); return; }
+    if (newPassword !== confirmPassword) { setPasswordError('Passwords do not match.'); return; }
+    setPasswordError('');
+    setPasswordSaving(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setPasswordSaving(false);
+    if (error) {
+      setPasswordError(error.message);
+      return;
+    }
+    setNewPassword('');
+    setConfirmPassword('');
+    setChangingPassword(false);
+    setPasswordSuccess(true);
   }
 
   async function exportData() {
@@ -257,6 +282,76 @@ export function ProfilePage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Security */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-gray-400" />
+            <h2 className="text-sm font-semibold text-white">Security</h2>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-3">
+          {passwordSuccess && !changingPassword && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+              <p className="text-emerald-400 text-sm">Password updated successfully.</p>
+            </div>
+          )}
+          {!changingPassword ? (
+            <button
+              onClick={() => { setChangingPassword(true); setPasswordSuccess(false); setPasswordError(''); }}
+              className="w-full flex items-center gap-3 py-3 px-4 rounded-xl bg-gray-800/50 border border-gray-700 hover:border-gray-600 text-sm text-gray-300 hover:text-white transition-colors"
+            >
+              <Lock className="w-4 h-4 text-emerald-400" />
+              Change password
+            </button>
+          ) : (
+            <div className="space-y-3">
+              {passwordError && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                  <p className="text-red-400 text-sm">{passwordError}</p>
+                </div>
+              )}
+              <div className="relative">
+                <Input
+                  label="New password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  hint="At least 8 characters"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-8 text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Input
+                label="Confirm new password"
+                type={showPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={changePassword} loading={passwordSaving}>Update password</Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => { setChangingPassword(false); setNewPassword(''); setConfirmPassword(''); setPasswordError(''); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Privacy & data */}
       <Card>
