@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X, FileText, Lock, Eye, EyeOff } from 'lucide-react';
+import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X, FileText, Lock, Eye, EyeOff, Camera } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
@@ -41,6 +41,8 @@ export function ProfilePage() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -75,6 +77,26 @@ export function ProfilePage() {
     await ProfileRepository.update(user.id, { phone_number: next });
     await refreshProfile();
     setSavingPhone(false);
+  }
+
+  async function uploadAvatar(file: File) {
+    if (!user) return;
+    if (!file.type.startsWith('image/')) { setAvatarError('Please choose an image file.'); return; }
+    if (file.size > 5 * 1024 * 1024) { setAvatarError('Image must be smaller than 5MB.'); return; }
+    setAvatarError('');
+    setAvatarUploading(true);
+    const ext = file.name.split('.').pop() ?? 'jpg';
+    const path = `${user.id}/avatar.${ext}`;
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+    if (uploadError) {
+      setAvatarError(uploadError.message);
+      setAvatarUploading(false);
+      return;
+    }
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+    await ProfileRepository.update(user.id, { avatar_url: `${data.publicUrl}?t=${Date.now()}` });
+    await refreshProfile();
+    setAvatarUploading(false);
   }
 
   async function changePassword() {
@@ -145,10 +167,30 @@ export function ProfilePage() {
       <Card>
         <CardContent className="py-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center">
-              <span className="text-2xl font-bold text-emerald-400">
-                {profile?.display_name?.[0]?.toUpperCase() ?? '?'}
-              </span>
+            <div className="relative w-16 h-16 shrink-0">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="" className="w-16 h-16 rounded-2xl object-cover" />
+              ) : (
+                <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center">
+                  <span className="text-2xl font-bold text-emerald-400">
+                    {profile?.display_name?.[0]?.toUpperCase() ?? '?'}
+                  </span>
+                </div>
+              )}
+              <label className="absolute -bottom-1 -right-1 w-6 h-6 bg-gray-800 border border-gray-700 rounded-full flex items-center justify-center cursor-pointer hover:border-emerald-500 transition-colors">
+                <Camera className="w-3.5 h-3.5 text-gray-300" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={avatarUploading}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadAvatar(file);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
             </div>
             <div className="flex-1">
               {editingName ? (
@@ -209,6 +251,8 @@ export function ProfilePage() {
               {profile?.invite_code && (
                 <p className="text-xs text-gray-600 mt-0.5">Invite code: <span className="font-mono text-gray-400">{profile.invite_code}</span></p>
               )}
+              {avatarUploading && <p className="text-xs text-gray-500 mt-0.5">Uploading photo…</p>}
+              {avatarError && <p className="text-xs text-red-400 mt-0.5">{avatarError}</p>}
             </div>
           </div>
         </CardContent>
