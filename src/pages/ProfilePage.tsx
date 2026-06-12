@@ -30,6 +30,7 @@ export function ProfilePage() {
   const [editingPhone, setEditingPhone] = useState(false);
   const [newPhone, setNewPhone] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
 
@@ -40,20 +41,32 @@ export function ProfilePage() {
 
   async function saveName() {
     if (!user || !newName.trim()) return;
+    setEditingName(false);
+    const trimmed = newName.trim();
+    if (trimmed === profile?.display_name) return;
     setSavingName(true);
-    await ProfileRepository.update(user.id, { display_name: newName.trim() });
+    await ProfileRepository.update(user.id, { display_name: trimmed });
     await refreshProfile();
     setSavingName(false);
-    setEditingName(false);
   }
+
+  const PHONE_PATTERN = /^\+?[0-9\s-]{7,15}$/;
 
   async function savePhone() {
     if (!user) return;
+    const trimmed = newPhone.trim();
+    if (trimmed && !PHONE_PATTERN.test(trimmed)) {
+      setPhoneError('Enter a valid phone number (7-15 digits, optional + prefix).');
+      return;
+    }
+    setPhoneError('');
+    setEditingPhone(false);
+    const next = trimmed || null;
+    if (next === (profile?.phone_number ?? null)) return;
     setSavingPhone(true);
-    await ProfileRepository.update(user.id, { phone_number: newPhone.trim() || null });
+    await ProfileRepository.update(user.id, { phone_number: next });
     await refreshProfile();
     setSavingPhone(false);
-    setEditingPhone(false);
   }
 
   async function exportData() {
@@ -140,27 +153,30 @@ export function ProfilePage() {
               )}
               <p className="text-sm text-gray-500">{user?.email}</p>
               {editingPhone ? (
-                <div className="flex items-center gap-2 mt-1">
-                  <input
-                    type="tel"
-                    value={newPhone}
-                    onChange={e => setNewPhone(e.target.value)}
-                    placeholder="Mobile number"
-                    className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    autoFocus
-                    onKeyDown={e => e.key === 'Enter' && savePhone()}
-                  />
-                  <button onClick={savePhone} disabled={savingPhone} className="text-emerald-400 hover:text-emerald-300">
-                    <Check className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => setEditingPhone(false)} className="text-gray-500 hover:text-gray-300">
-                    <X className="w-4 h-4" />
-                  </button>
+                <div className="mt-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="tel"
+                      value={newPhone}
+                      onChange={e => { setNewPhone(e.target.value); setPhoneError(''); }}
+                      placeholder="Mobile number"
+                      className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      autoFocus
+                      onKeyDown={e => e.key === 'Enter' && savePhone()}
+                    />
+                    <button onClick={savePhone} disabled={savingPhone} className="text-emerald-400 hover:text-emerald-300">
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => { setEditingPhone(false); setPhoneError(''); }} className="text-gray-500 hover:text-gray-300">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {phoneError && <p className="text-xs text-red-400 mt-1">{phoneError}</p>}
                 </div>
               ) : (
                 <div className="flex items-center gap-2 mt-0.5">
                   <p className="text-sm text-gray-500">{profile?.phone_number || 'No mobile number'}</p>
-                  <button onClick={() => { setNewPhone(profile?.phone_number ?? ''); setEditingPhone(true); }} className="text-gray-600 hover:text-gray-400 transition-colors">
+                  <button onClick={() => { setNewPhone(profile?.phone_number ?? ''); setEditingPhone(true); setPhoneError(''); }} className="text-gray-600 hover:text-gray-400 transition-colors">
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                 </div>
