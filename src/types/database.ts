@@ -15,6 +15,7 @@ export interface Database {
           timezone: string;
           phone_number: string | null;
           last_onboarded_at: string | null;
+          last_active_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -29,6 +30,7 @@ export interface Database {
           timezone?: string;
           phone_number?: string | null;
           last_onboarded_at?: string | null;
+          last_active_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -43,6 +45,7 @@ export interface Database {
           timezone?: string;
           phone_number?: string | null;
           last_onboarded_at?: string | null;
+          last_active_at?: string | null;
           updated_at?: string;
         };
         Relationships: [];
