@@ -1,15 +1,22 @@
-import React, { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   Flame, Dumbbell, Salad, Pill, CheckCircle2, Circle, Coffee,
-  Moon, Zap, ChevronRight, RefreshCw, BedDouble, Target, TrendingUp, Users,
-  Info, X, MessageSquare, ChevronLeft
+  Moon, Zap, ChevronRight, RefreshCw, BedDouble, Target, TrendingUp,
+  Info, X, MessageSquare
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { PlanRepository } from '../repositories/PlanRepository';
+import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
+import { StreakRepository } from '../repositories/StreakRepository';
+import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
+import { DailyLogRepository } from '../repositories/DailyLogRepository';
+import { BuddyRepository } from '../repositories/BuddyRepository';
+import { ProfileRepository } from '../repositories/ProfileRepository';
+import { StreakService } from '../services/StreakService';
+import { DashboardService } from '../services/DashboardService';
 import { today, DEFAULT_TIMEZONE } from '../lib/utils';
-import { parsePlanData } from '../lib/planSchema';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import type { DailyTask, TaskLog, Streak, DailyLog } from '../types';
@@ -100,42 +107,39 @@ export function DashboardPage() {
     if (!user) return;
     setLoading(true);
 
-    const [tasksRes, logsRes, streakRes] = await Promise.all([
-      supabase.from('daily_tasks').select('*').eq('user_id', user.id).eq('task_date', todayDate).order('order_index'),
-      supabase.from('task_logs').select('*').eq('user_id', user.id).eq('log_date', todayDate),
-      supabase.from('streaks').select('*').eq('user_id', user.id).maybeSingle(),
+    const [tasksData, logsData, streakData] = await Promise.all([
+      DailyTaskRepository.getForDate(user.id, todayDate),
+      DailyTaskRepository.getLogsForDate(user.id, todayDate),
+      StreakRepository.getForUser(user.id),
     ]);
 
-    const logMap = new Map((logsRes.data ?? []).map(l => [l.task_id, l]));
-    const enriched = (tasksRes.data ?? []).map(t => ({ ...t, log: logMap.get(t.id) }));
+    const logMap = new Map(logsData.map(l => [l.task_id, l]));
+    const enriched = tasksData.map(t => ({ ...t, log: logMap.get(t.id) }));
     setTasks(enriched);
-    setStreak(streakRes.data);
+    setStreak(streakData);
 
     // If no tasks today, try to seed from active plan
     if (enriched.length === 0) {
-      const { data: plan } = await supabase.from('plans').select('id, plan_data').eq('user_id', user.id).eq('is_active', true).order('generated_at', { ascending: false }).limit(1).maybeSingle();
+      const plan = await PlanRepository.getActivePlan(user.id);
       if (plan) {
-        await seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
-        const { data: newTasks } = await supabase.from('daily_tasks').select('*').eq('user_id', user.id).eq('task_date', todayDate).order('order_index');
-        setTasks((newTasks ?? []).map(t => ({ ...t, log: undefined })));
+        await DashboardService.seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
+        const newTasks = await DailyTaskRepository.getForDate(user.id, todayDate);
+        setTasks(newTasks.map(t => ({ ...t, log: undefined })));
       }
     }
 
     // Load buddy tiles
-    const { data: buddyRels } = await supabase
-      .from('buddies')
-      .select('id, requester_id, recipient_id')
-      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
-      .eq('status', 'active');
+    const buddyRels = await BuddyRepository.getRelations(user.id);
+    const activeBuddyRels = buddyRels.filter(b => b.status === 'active');
 
-    if (buddyRels && buddyRels.length > 0) {
-      const buddyIds = buddyRels.map(b => b.requester_id === user.id ? b.recipient_id : b.requester_id);
+    if (activeBuddyRels.length > 0) {
+      const buddyIds = activeBuddyRels.map(b => b.requester_id === user.id ? b.recipient_id : b.requester_id);
       const [buddyProfiles, buddyStreaks] = await Promise.all([
-        supabase.from('profiles').select('id, display_name').in('id', buddyIds),
-        supabase.from('streaks').select('user_id, current_streak, monthly_completion_rate').in('user_id', buddyIds),
+        ProfileRepository.getByIds(buddyIds),
+        StreakRepository.getForUsers(buddyIds),
       ]);
-      const streakMap = new Map((buddyStreaks.data ?? []).map(s => [s.user_id, s]));
-      const tiles: BuddyTile[] = (buddyProfiles.data ?? []).map(p => {
+      const streakMap = new Map(buddyStreaks.map(s => [s.user_id, s]));
+      const tiles: BuddyTile[] = buddyProfiles.map(p => {
         const s = streakMap.get(p.id);
         return {
           id: p.id,
@@ -148,7 +152,7 @@ export function DashboardPage() {
     }
 
     // Load today's daily log
-    const { data: existingLog } = await supabase.from('daily_logs').select('*').eq('user_id', user.id).eq('log_date', todayDate).maybeSingle();
+    const existingLog = await DailyLogRepository.getForDate(user.id, todayDate);
     if (existingLog) setDailyLog(existingLog);
 
     setLoading(false);
@@ -167,41 +171,17 @@ export function DashboardPage() {
         : t
     ));
 
-    await supabase.from('task_logs').upsert({
+    await DailyTaskRepository.upsertLog({
       user_id: user.id,
       task_id: task.id,
       log_date: todayDate,
       completed: nowCompleted,
       completed_at: nowCompleted ? new Date().toISOString() : null,
-    }, { onConflict: 'user_id,task_id,log_date' });
+    });
 
-    await updateStreak(user.id, nowCompleted);
+    const updated = await StreakService.recordCompletion(user.id, nowCompleted, todayDate, tz);
+    if (updated) setStreak(updated);
     setTogglingId(null);
-  }
-
-  async function updateStreak(userId: string, completedAny: boolean) {
-    const { data: current } = await supabase.from('streaks').select('*').eq('user_id', userId).maybeSingle();
-    if (!current) return;
-
-    const lastActive = current.last_active_date;
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yest = yesterday.toLocaleDateString('en-CA', { timeZone: tz });
-
-    let newStreak = current.current_streak;
-    if (completedAny && lastActive !== todayDate) {
-      newStreak = lastActive === yest ? current.current_streak + 1 : 1;
-    }
-
-    await supabase.from('streaks').update({
-      current_streak: newStreak,
-      longest_streak: Math.max(newStreak, current.longest_streak),
-      last_active_date: completedAny ? todayDate : current.last_active_date,
-      total_active_days: completedAny && lastActive !== todayDate ? current.total_active_days + 1 : current.total_active_days,
-      updated_at: new Date().toISOString(),
-    }).eq('user_id', userId);
-
-    setStreak(prev => prev ? { ...prev, current_streak: newStreak, longest_streak: Math.max(newStreak, prev.longest_streak) } : prev);
   }
 
   async function logRestDay() {
@@ -209,17 +189,15 @@ export function DashboardPage() {
     setRestDayLogging(true);
     const pending = tasks.filter(t => !t.log?.completed);
     if (pending.length > 0) {
-      const { error } = await supabase.from('task_logs').upsert(
-        pending.map(task => ({
+      try {
+        await DailyTaskRepository.upsertLogs(pending.map(task => ({
           user_id: user.id,
           task_id: task.id,
           log_date: todayDate,
           completed: false,
           notes: 'Rest day',
-        })),
-        { onConflict: 'user_id,task_id,log_date' }
-      );
-      if (error) {
+        })));
+      } catch (error) {
         console.error('Failed to log rest day:', error);
         setRestDayLogging(false);
         return;
@@ -232,7 +210,7 @@ export function DashboardPage() {
   async function saveMeasurement() {
     if (!user || (!weight && !waist)) return;
     setSavingMeasurement(true);
-    await supabase.from('body_measurements').insert({
+    await BodyMeasurementRepository.create({
       user_id: user.id,
       measured_at: todayDate,
       weight_kg: weight ? Number(weight) : null,
@@ -247,7 +225,7 @@ export function DashboardPage() {
   async function saveDailyLog() {
     if (!user) return;
     setSavingLog(true);
-    await supabase.from('daily_logs').upsert({
+    await DailyLogRepository.upsert({
       user_id: user.id,
       log_date: todayDate,
       workout_comments: dailyLog.workout_comments || null,
@@ -258,7 +236,7 @@ export function DashboardPage() {
       sleep_comments: dailyLog.sleep_comments || null,
       vitals_comments: dailyLog.vitals_comments || null,
       other_comments: dailyLog.other_comments || null,
-    }, { onConflict: 'user_id,log_date' });
+    });
     setSavingLog(false);
     setShowLogModal(false);
   }
@@ -638,61 +616,3 @@ export function DashboardPage() {
   );
 }
 
-async function seedTasksFromPlan(userId: string, planId: string, rawPlanData: unknown, timezone: string) {
-  const planData = parsePlanData(rawPlanData);
-  if (!planData) return;
-
-  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: timezone });
-  const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone }).toLowerCase();
-
-  // Only seed if no tasks exist for today (prevent duplication)
-  const { data: existing } = await supabase.from('daily_tasks').select('id').eq('user_id', userId).eq('task_date', todayStr).limit(1);
-  if (existing && existing.length > 0) return;
-
-  const tasks: Array<Record<string, unknown>> = [];
-  let idx = 0;
-
-  const scheduleMap = planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }> | undefined;
-  const schedule = scheduleMap?.[dayName];
-  if (schedule) {
-    if (schedule.is_rest_day) {
-      tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'habit', title: 'Rest & Recovery Day', description: 'Light walk, stretching, or yoga. Let your muscles recover.', order_index: idx++, is_rest_day: true });
-    } else if (schedule.workout) {
-      tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'workout', title: schedule.workout.name, description: schedule.workout.exercises.map((e) => `${e.name}: ${e.sets}x${e.reps}`).join(' • '), order_index: idx++, is_rest_day: false });
-    }
-  } else if (scheduleMap) {
-    // Fallback: if the day is missing from schedule, treat as rest day
-    tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'habit', title: 'Rest & Recovery Day', description: 'Light walk, stretching, or yoga.', order_index: idx++, is_rest_day: true });
-  }
-
-  const meals = (planData.daily_meals as unknown as Record<string, { title: string; items: string[] }> | undefined) ?? {};
-  const mealLabels: Record<string, string> = {
-    breakfast: 'Breakfast',
-    mid_morning_snack: 'Mid-morning Snack',
-    lunch: 'Lunch',
-    evening_snack: 'Evening Snack',
-    dinner: 'Dinner',
-    pre_sleep: 'Pre-sleep',
-  };
-  for (const [key, meal] of Object.entries(meals)) {
-    const label = mealLabels[key] || key.replace(/_/g, ' ');
-    tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'meal', title: `${label}: ${meal.title}`, description: meal.items.slice(0, 3).join(', '), order_index: idx++, is_rest_day: false });
-  }
-
-  const supplements = ((planData.supplements as Array<{ name: string; dosage: string; timing: string; phase_start: number }>) ?? []).filter(s => s.phase_start === 1).slice(0, 4);
-  for (const s of supplements) {
-    tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'supplement', title: s.name, description: `${s.dosage} — ${s.timing}`, order_index: idx++, is_rest_day: false });
-  }
-
-  const habits = ((planData.daily_habits as Array<{ title: string; description: string; timing: string }>) ?? []).slice(0, 5);
-  for (const h of habits) {
-    tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'habit', title: h.title, description: `${h.timing} — ${h.description}`, order_index: idx++, is_rest_day: false });
-  }
-
-  const sleep = planData.sleep_protocol as { target_bedtime: string; target_wake_time: string } | undefined;
-  if (sleep) {
-    tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'sleep', title: `Sleep by ${sleep.target_bedtime}`, description: `Wake at ${sleep.target_wake_time}`, order_index: idx++, is_rest_day: false });
-  }
-
-  if (tasks.length > 0) await supabase.from('daily_tasks').insert(tasks);
-}

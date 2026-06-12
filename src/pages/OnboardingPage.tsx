@@ -1,15 +1,28 @@
-import React, { useState, useEffect, useRef, useCallback, KeyboardEvent } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Dumbbell, Sparkles, X, ClipboardList } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
+import { ProgressBar } from '../components/onboarding/ProgressBar';
+import { StepHeader } from '../components/onboarding/StepHeader';
+import { FieldLabel } from '../components/onboarding/FieldLabel';
+import { RadioCards } from '../components/onboarding/RadioCards';
+import { ButtonGrid } from '../components/onboarding/ButtonGrid';
+import { StressPicker } from '../components/onboarding/StressPicker';
+import { StepGoalModality, buildFieldRenderCtx } from '../components/onboarding/StepGoalModality';
+import { MODALITY_REGISTRY, MODALITY_ORDER, GOAL_MODALITIES } from '../config/modalities/registry';
 import type {
-  GoalModality, GoalDetails, GymDetails, YogaDetails, CardioDetails,
-  HomeDetails, PhysioDetails, DietDetails, SupplementDetails, ConcernsDetails,
-  OnboardingData, OnboardingTrackingConfig,
+  GoalModality, GoalDetails,
+  OnboardingData,
 } from '../types';
+import { TRACKERS } from '../config/trackers';
+import { COUNTRIES } from '../config/countries/countries';
+import { detectTimezone, detectCountry } from '../config/countries/timezone-detect';
+import { ProfileRepository } from '../repositories/ProfileRepository';
+import { HealthProfileRepository } from '../repositories/HealthProfileRepository';
+import { TrackingConfigRepository } from '../repositories/TrackingConfigRepository';
+import type { Json } from '../types/database';
 
 // ========== STEP TYPES ==========
 
@@ -21,134 +34,6 @@ type StepId =
   | 'track_setup' | 'track_confirm';
 
 // ========== CONSTANTS ==========
-
-const GOAL_MODALITIES: { id: GoalModality; label: string; description: string; icon: string; tag?: string }[] = [
-  { id: 'gym',         label: 'Gym Workout',                  description: 'Structured training with weights and machines',         icon: '🏋️' },
-  { id: 'yoga',        label: 'Yoga',                         description: 'Flexibility, mindfulness, and mind-body connection',    icon: '🧘' },
-  { id: 'cardio',      label: 'Walking / Running / Cardio',   description: 'Endurance, heart health, and calorie burn',            icon: '🏃' },
-  { id: 'home',        label: 'Home Workout',                 description: 'Effective training with no gym required',              icon: '🏠' },
-  { id: 'physio',      label: 'Physiotherapy & Recovery',     description: 'Injury recovery, pain management, and mobility',      icon: '🩹' },
-  { id: 'diet',        label: 'Diet & Nutrition',             description: 'Personalised meal plan using ingredients available where you live',       icon: '🥗' },
-  { id: 'supplements', label: 'Supplements',                  description: 'Targeted supplements for your goals and budget',      icon: '💊' },
-  { id: 'concerns',    label: 'Other Health Concerns',        description: 'PCOS, thyroid, BP, immunity, hair, skin & more',      icon: '➕', tag: 'Add-on' },
-];
-
-const TRACKERS = [
-  { id: 'workouts',     label: 'Workouts',           description: 'Log exercises, sets, reps, and weights' },
-  { id: 'steps',        label: 'Steps & Distance',   description: 'Daily step count and distance' },
-  { id: 'meals',        label: 'Meals & Diet',       description: 'What you eat each day' },
-  { id: 'macros',       label: 'Macros',             description: 'Protein, carbs, fat, calories' },
-  { id: 'supplements',  label: 'Supplements',        description: 'Daily supplement check-off' },
-  { id: 'measurements', label: 'Body Measurements',  description: 'Weight, waist, chest, hips' },
-  { id: 'vitals',       label: 'Vitals',             description: 'Blood pressure, heart rate, blood sugar' },
-  { id: 'sleep',        label: 'Sleep',              description: 'Bedtime, wake time, quality' },
-  { id: 'water',        label: 'Water Intake',       description: 'Daily hydration' },
-  { id: 'mood',         label: 'Mood & Energy',      description: 'Daily energy and mood rating' },
-];
-
-const COUNTRIES = [
-  'India', 'United States', 'United Kingdom', 'Canada', 'Australia',
-  'UAE', 'Singapore', 'New Zealand', 'Pakistan', 'Bangladesh',
-  'Sri Lanka', 'Nepal', 'Germany', 'Netherlands', 'France',
-  'Italy', 'Spain', 'Switzerland', 'Sweden', 'Norway',
-  'Qatar', 'Kuwait', 'Saudi Arabia', 'Bahrain', 'Oman',
-  'Malaysia', 'South Africa', 'Kenya', 'Nigeria', 'Ireland',
-];
-
-const MODALITY_ORDER: GoalModality[] = ['gym', 'yoga', 'cardio', 'home', 'physio', 'diet', 'supplements', 'concerns'];
-
-const SOUTH_ASIA_COUNTRIES = ['India', 'Pakistan', 'Bangladesh', 'Sri Lanka', 'Nepal'];
-const MIDDLE_EAST_COUNTRIES = ['UAE', 'Qatar', 'Kuwait', 'Saudi Arabia', 'Bahrain', 'Oman'];
-const SOUTHEAST_ASIA_COUNTRIES = ['Singapore', 'Malaysia'];
-
-const COMMON_CUISINE_OPTIONS = [
-  { id: 'continental',  label: 'Continental / Western' },
-  { id: 'high_protein', label: 'High-protein snacks' },
-  { id: 'quick_prep',   label: 'Quick / low-effort meals' },
-];
-
-function getCuisineOptions(country: string): { id: string; label: string }[] {
-  if (SOUTH_ASIA_COUNTRIES.includes(country)) {
-    return [
-      { id: 'north_indian',    label: 'North Indian' },
-      { id: 'south_indian',    label: 'South Indian' },
-      { id: 'bengali',         label: 'Bengali / East Indian' },
-      { id: 'gujarati',        label: 'Gujarati / Rajasthani' },
-      { id: 'maharashtrian',   label: 'Maharashtrian' },
-      ...COMMON_CUISINE_OPTIONS,
-    ];
-  }
-  if (MIDDLE_EAST_COUNTRIES.includes(country)) {
-    return [
-      { id: 'levantine',   label: 'Levantine (Lebanese, Syrian)' },
-      { id: 'gulf',        label: 'Gulf / Khaleeji' },
-      { id: 'egyptian',    label: 'Egyptian / North African' },
-      { id: 'south_asian', label: 'South Asian' },
-      ...COMMON_CUISINE_OPTIONS,
-    ];
-  }
-  if (SOUTHEAST_ASIA_COUNTRIES.includes(country)) {
-    return [
-      { id: 'malay',   label: 'Malay' },
-      { id: 'chinese', label: 'Chinese' },
-      { id: 'indian',  label: 'Indian' },
-      { id: 'thai',    label: 'Thai / Southeast Asian' },
-      ...COMMON_CUISINE_OPTIONS,
-    ];
-  }
-  return [
-    { id: 'mediterranean', label: 'Mediterranean' },
-    { id: 'asian',         label: 'Asian-inspired' },
-    { id: 'latin',         label: 'Latin American' },
-    ...COMMON_CUISINE_OPTIONS,
-  ];
-}
-
-const CURRENCY_INFO: Record<string, { symbol: string; tiers: [number, number, number] }> = {
-  'India':          { symbol: '₹',   tiers: [500, 1500, 3000] },
-  'United States':  { symbol: '$',   tiers: [20, 50, 100] },
-  'United Kingdom': { symbol: '£',   tiers: [15, 40, 80] },
-  'Canada':         { symbol: 'C$',  tiers: [25, 65, 130] },
-  'Australia':      { symbol: 'A$',  tiers: [30, 75, 150] },
-  'UAE':            { symbol: 'AED', tiers: [75, 200, 400] },
-  'Singapore':      { symbol: 'S$',  tiers: [25, 70, 140] },
-  'New Zealand':    { symbol: 'NZ$', tiers: [30, 80, 160] },
-  'Pakistan':       { symbol: '₨',   tiers: [3000, 8000, 15000] },
-  'Bangladesh':     { symbol: '৳',   tiers: [2000, 5000, 10000] },
-  'Sri Lanka':      { symbol: 'Rs',  tiers: [4000, 10000, 20000] },
-  'Nepal':          { symbol: 'Rs',  tiers: [3000, 8000, 15000] },
-  'Germany':        { symbol: '€',   tiers: [20, 50, 100] },
-  'Netherlands':    { symbol: '€',   tiers: [20, 50, 100] },
-  'France':         { symbol: '€',   tiers: [20, 50, 100] },
-  'Italy':          { symbol: '€',   tiers: [20, 50, 100] },
-  'Spain':          { symbol: '€',   tiers: [20, 50, 100] },
-  'Switzerland':    { symbol: 'CHF', tiers: [25, 60, 120] },
-  'Sweden':         { symbol: 'kr',  tiers: [200, 500, 1000] },
-  'Norway':         { symbol: 'kr',  tiers: [200, 500, 1000] },
-  'Qatar':          { symbol: 'QR',  tiers: [75, 200, 400] },
-  'Kuwait':         { symbol: 'KD',  tiers: [7, 18, 35] },
-  'Saudi Arabia':   { symbol: 'SR',  tiers: [75, 200, 400] },
-  'Bahrain':        { symbol: 'BD',  tiers: [7, 18, 35] },
-  'Oman':           { symbol: 'OMR', tiers: [7, 18, 35] },
-  'Malaysia':       { symbol: 'RM',  tiers: [80, 220, 450] },
-  'South Africa':   { symbol: 'R',   tiers: [350, 900, 1800] },
-  'Kenya':          { symbol: 'KSh', tiers: [2500, 6500, 13000] },
-  'Nigeria':        { symbol: '₦',   tiers: [8000, 20000, 40000] },
-  'Ireland':        { symbol: '€',   tiers: [20, 50, 100] },
-};
-
-const DEFAULT_CURRENCY: { symbol: string; tiers: [number, number, number] } = { symbol: '$', tiers: [20, 50, 100] };
-
-function getSupplementBudgetOptions(country: string): { value: string; label: string }[] {
-  const { symbol, tiers } = CURRENCY_INFO[country] ?? DEFAULT_CURRENCY;
-  const [t1, t2, t3] = tiers;
-  return [
-    { value: 'under_500', label: `Under ${symbol}${t1.toLocaleString()}` },
-    { value: '500_1500',  label: `${symbol}${t1.toLocaleString()}–${symbol}${t2.toLocaleString()}` },
-    { value: '1500_3000', label: `${symbol}${t2.toLocaleString()}–${symbol}${t3.toLocaleString()}` },
-    { value: 'no_limit',  label: 'No strict limit' },
-  ];
-}
 
 const EMPTY_DATA: OnboardingData = {
   display_name: '',
@@ -173,38 +58,6 @@ const EMPTY_DATA: OnboardingData = {
 };
 
 // ========== UTILITIES ==========
-
-function detectTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function detectCountry(): string {
-  try {
-    const tz = detectTimezone();
-    if (/Kolkata|Calcutta/.test(tz))                                       return 'India';
-    if (/Karachi/.test(tz))                                                return 'Pakistan';
-    if (/Dhaka/.test(tz))                                                  return 'Bangladesh';
-    if (/Colombo/.test(tz))                                                return 'Sri Lanka';
-    if (/Kathmandu/.test(tz))                                              return 'Nepal';
-    if (/Dubai|Abu_Dhabi|Muscat/.test(tz))                                 return 'UAE';
-    if (/Singapore/.test(tz))                                              return 'Singapore';
-    if (/Kuala_Lumpur/.test(tz))                                           return 'Malaysia';
-    if (/London/.test(tz))                                                 return 'United Kingdom';
-    if (/New_York|Chicago|Los_Angeles|Denver|Phoenix|Anchorage/.test(tz))  return 'United States';
-    if (/Toronto|Vancouver|Winnipeg/.test(tz))                             return 'Canada';
-    if (/Sydney|Melbourne|Brisbane|Perth|Adelaide/.test(tz))               return 'Australia';
-    if (/Auckland/.test(tz))                                               return 'New Zealand';
-    if (/Berlin|Frankfurt/.test(tz))                                       return 'Germany';
-    if (/Paris/.test(tz))                                                  return 'France';
-    if (/Riyadh/.test(tz))                                                 return 'Saudi Arabia';
-    if (/Doha/.test(tz))                                                   return 'Qatar';
-  } catch { /* fall through */ }
-  return '';
-}
 
 function buildStepSequence(path: 'plan' | 'track' | null, modalities: GoalModality[]): StepId[] {
   const base: StepId[] = ['about_you', 'intention'];
@@ -296,238 +149,6 @@ function sanitizeComment(c: string): string | null {
     .replace(/(system\s*:\s*)/gi, '')
     .replace(/^(you\s+(are|must|should|will|shall|ignore)\b.*)$/gim, '')
     .trim() || null;
-}
-
-function getStageLabel(stepId: StepId): string {
-  if (stepId === 'about_you')                                   return 'About You';
-  if (stepId === 'intention')                                   return 'Your Path';
-  if (stepId === 'goal_selection')                              return 'Goals';
-  if (stepId.startsWith('goal_'))                               return 'Details';
-  if (stepId === 'lifestyle')                                   return 'Lifestyle';
-  if (stepId === 'plan_confirm')                                return 'All Set';
-  if (stepId === 'track_setup')                                 return 'Setup';
-  if (stepId === 'track_confirm')                               return 'All Set';
-  return '';
-}
-
-// ========== SHARED UI COMPONENTS ==========
-
-function ProgressBar({ stepIndex, totalSteps, stepId }: { stepIndex: number; totalSteps: number; stepId: StepId }) {
-  const pct = totalSteps > 1 ? Math.round((stepIndex / (totalSteps - 1)) * 100) : 100;
-  return (
-    <div className="w-full mb-7">
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-xs font-medium text-emerald-400">{getStageLabel(stepId)}</span>
-        <span className="text-xs text-gray-500">{pct}% complete</span>
-      </div>
-      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StepHeader({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="mb-5">
-      <h2 className="text-lg font-semibold text-white mb-1">{title}</h2>
-      <p className="text-sm text-gray-400 leading-relaxed">{subtitle}</p>
-    </div>
-  );
-}
-
-function FieldLabel({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
-  return (
-    <label className="text-sm font-medium text-gray-300 block mb-2">
-      {children}
-      {optional && <span className="text-xs text-gray-600 font-normal ml-1">(optional)</span>}
-    </label>
-  );
-}
-
-function MultiSelectChips({
-  options, selected, onChange, max,
-}: {
-  options: { id: string; label: string }[];
-  selected: string[];
-  onChange: (v: string[]) => void;
-  max?: number;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map(opt => {
-        const active = selected.includes(opt.id);
-        const capped = !active && max !== undefined && selected.length >= max;
-        return (
-          <button
-            key={opt.id}
-            type="button"
-            disabled={capped}
-            onClick={() => onChange(active ? selected.filter(s => s !== opt.id) : [...selected, opt.id])}
-            className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-all duration-200 ${
-              active  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-              : capped ? 'bg-gray-800/40 border-gray-800 text-gray-600 cursor-not-allowed'
-              :          'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
-            }`}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function RadioCards({
-  options, value, onChange,
-}: {
-  options: { value: string; label: string; description?: string }[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      {options.map(opt => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`w-full flex items-start gap-3 px-4 py-3 rounded-xl border transition-all duration-200 text-left ${
-            value === opt.value
-              ? 'bg-emerald-500/10 border-emerald-500/60 text-emerald-300'
-              : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
-          }`}
-        >
-          <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 mt-0.5 transition-colors ${
-            value === opt.value ? 'border-emerald-500 bg-emerald-500' : 'border-gray-600'
-          }`} />
-          <div>
-            <p className="text-sm font-medium leading-snug">{opt.label}</p>
-            {opt.description && <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>}
-          </div>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ButtonGrid({
-  options, value, onChange, cols = 2,
-}: {
-  options: { value: string; label: string }[];
-  value: string | number;
-  onChange: (v: string) => void;
-  cols?: number;
-}) {
-  return (
-    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-      {options.map(opt => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`px-3 py-2.5 rounded-xl text-xs font-medium border transition-all duration-200 text-left ${
-            String(value) === opt.value
-              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-              : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function StressPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const opts = [
-    { v: 1, label: 'Very calm', emoji: '😌' },
-    { v: 2, label: 'Calm',      emoji: '🙂' },
-    { v: 3, label: 'Moderate',  emoji: '😐' },
-    { v: 4, label: 'Stressed',  emoji: '😟' },
-    { v: 5, label: 'Very stressed', emoji: '😤' },
-  ];
-  return (
-    <div className="flex gap-2">
-      {opts.map(o => (
-        <button
-          key={o.v}
-          type="button"
-          onClick={() => onChange(o.v)}
-          className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all duration-200 ${
-            value === o.v
-              ? 'bg-emerald-500/20 border-emerald-500'
-              : 'bg-gray-800 border-gray-700 hover:border-gray-600'
-          }`}
-        >
-          <span className="text-lg">{o.emoji}</span>
-          <span className="text-xs text-gray-400 hidden sm:block">{o.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function TagInput({
-  label, tags, onChange, placeholder, hint, optional,
-}: {
-  label: string;
-  tags: string[];
-  onChange: (v: string[]) => void;
-  placeholder?: string;
-  hint?: string;
-  optional?: boolean;
-}) {
-  const [val, setVal] = useState('');
-  const ref = useRef<HTMLInputElement>(null);
-
-  function addTag(raw: string) {
-    const trimmed = raw.trim().slice(0, 60);
-    if (trimmed && !tags.includes(trimmed) && tags.length < 20)
-      onChange([...tags, trimmed]);
-    setVal('');
-  }
-
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(val); }
-    else if (e.key === 'Backspace' && val === '' && tags.length > 0) onChange(tags.slice(0, -1));
-  }
-
-  return (
-    <div>
-      <FieldLabel optional={optional}>{label}</FieldLabel>
-      <div
-        className="min-h-[42px] bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 flex flex-wrap gap-1.5 items-center focus-within:border-emerald-500 transition-colors cursor-text"
-        onClick={() => ref.current?.focus()}
-      >
-        {tags.map((tag, i) => (
-          <span key={i} className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 text-xs font-medium px-2 py-0.5 rounded-lg">
-            {tag}
-            <button
-              type="button"
-              onClick={e => { e.stopPropagation(); onChange(tags.filter((_, idx) => idx !== i)); }}
-              className="text-emerald-400 hover:text-white ml-0.5"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </span>
-        ))}
-        <input
-          ref={ref}
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={() => { if (val.trim()) addTag(val); }}
-          placeholder={tags.length === 0 ? placeholder : ''}
-          className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 outline-none min-w-[100px]"
-        />
-      </div>
-      {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
-    </div>
-  );
 }
 
 // ========== STEP COMPONENTS ==========
@@ -729,579 +350,6 @@ function StepGoalSelection({ data, set }: { data: OnboardingData; set: <K extend
   );
 }
 
-// --- Per-modality detail steps ---
-
-function setGoalDetail<M extends keyof GoalDetails>(
-  set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void,
-  goalDetails: GoalDetails,
-  modality: M,
-  partial: Partial<NonNullable<GoalDetails[M]>>
-) {
-  set('goal_details', {
-    ...goalDetails,
-    [modality]: { ...(goalDetails[modality] ?? {}), ...partial } as GoalDetails[M],
-  });
-}
-
-function StepGoalGym({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.gym ?? {} as Partial<GymDetails>;
-  const upd = (partial: Partial<GymDetails>) => setGoalDetail(set, data.goal_details, 'gym', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Gym Workout" subtitle="This shapes your split, load progression, and weekly structure." />
-      <div>
-        <FieldLabel>How long have you been training consistently?</FieldLabel>
-        <RadioCards
-          value={g.experience ?? ''}
-          onChange={v => upd({ experience: v })}
-          options={[
-            { value: 'never',        label: 'Never started' },
-            { value: 'beginner',     label: '< 3 months — Beginner' },
-            { value: 'intermediate', label: '3–12 months — Intermediate' },
-            { value: 'advanced',     label: '1–3 years — Advanced' },
-            { value: 'experienced',  label: '3+ years — Experienced' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Equipment access</FieldLabel>
-        <RadioCards
-          value={g.equipment ?? ''}
-          onChange={v => upd({ equipment: v })}
-          options={[
-            { value: 'full_gym',   label: 'Full gym membership' },
-            { value: 'home_gym',   label: 'Home gym (dumbbells, rack)' },
-            { value: 'minimal',    label: 'Minimal (bands, dumbbells only)' },
-            { value: 'bodyweight', label: 'Bodyweight only' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Training days per week</FieldLabel>
-        <ButtonGrid
-          cols={(['never', 'beginner'].includes(g.experience ?? '')) ? 4 : 6}
-          value={g.days_per_week ?? 0}
-          onChange={v => upd({ days_per_week: Number(v) })}
-          options={
-            ['never', 'beginner'].includes(g.experience ?? '')
-              ? [{ value: '2', label: '2 days' }, { value: '3', label: '3 days' }, { value: '4', label: '4 days' }, { value: '5', label: '5 days' }]
-              : [{ value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }, { value: '5', label: '5' }, { value: '6', label: '6' }]
-          }
-        />
-        {['never', 'beginner'].includes(g.experience ?? '') && (
-          <p className="text-xs text-amber-400/70 mt-1">We recommend easing in with fewer sessions initially.</p>
-        )}
-      </div>
-      <div>
-        <FieldLabel>Primary focus <span className="text-xs text-gray-500 font-normal">— pick up to 3</span></FieldLabel>
-        <MultiSelectChips
-          max={3}
-          selected={g.primary_focus ?? []}
-          onChange={v => upd({ primary_focus: v })}
-          options={[
-            { id: 'build_muscle',        label: 'Build muscle' },
-            { id: 'lose_fat',            label: 'Lose fat' },
-            { id: 'improve_strength',    label: 'Get stronger' },
-            { id: 'improve_endurance',   label: 'Endurance' },
-            { id: 'improve_flexibility', label: 'Flexibility' },
-            { id: 'tone_body',           label: 'Tone & define' },
-            { id: 'prepare_long_term',   label: 'General fitness' },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StepGoalYoga({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.yoga ?? {} as Partial<YogaDetails>;
-  const upd = (partial: Partial<YogaDetails>) => setGoalDetail(set, data.goal_details, 'yoga', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Yoga" subtitle="Your plan varies a lot by style and goal — these questions ensure yours is right." />
-      <div>
-        <FieldLabel>Your yoga experience</FieldLabel>
-        <RadioCards
-          value={g.experience ?? ''}
-          onChange={v => upd({ experience: v })}
-          options={[
-            { value: 'beginner',     label: 'Complete beginner' },
-            { value: 'tried_few',    label: 'Tried a few times' },
-            { value: 'regular',      label: 'Regular (3–12 months)' },
-            { value: 'established',  label: 'Established practice (1+ year)' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Session duration you can commit to</FieldLabel>
-        <ButtonGrid
-          cols={3}
-          value={g.session_duration ?? ''}
-          onChange={v => upd({ session_duration: v })}
-          options={[
-            { value: '15_20min', label: '15–20 min' },
-            { value: '30_45min', label: '30–45 min' },
-            { value: '60min',    label: '60+ min' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>What are you hoping yoga does for you? <span className="text-xs text-gray-500 font-normal">— up to 2</span></FieldLabel>
-        <MultiSelectChips
-          max={2}
-          selected={g.goals ?? []}
-          onChange={v => upd({ goals: v })}
-          options={[
-            { id: 'improve_flexibility', label: 'Improve flexibility' },
-            { id: 'reduce_stress',       label: 'Reduce stress & anxiety' },
-            { id: 'complement_gym',      label: 'Complement gym training' },
-            { id: 'back_posture',        label: 'Back / posture relief' },
-            { id: 'body_awareness',      label: 'Body awareness' },
-            { id: 'build_strength',      label: 'Build strength' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Style preference</FieldLabel>
-        <RadioCards
-          value={g.style ?? ''}
-          onChange={v => upd({ style: v })}
-          options={[
-            { value: 'not_sure', label: "Not sure — let the plan decide" },
-            { value: 'hatha',    label: 'Hatha',   description: 'Slow, foundational, beginner-friendly' },
-            { value: 'vinyasa',  label: 'Vinyasa', description: 'Flowing sequences, moderate intensity' },
-            { value: 'yin',      label: 'Yin',     description: 'Deep passive stretching, held poses' },
-            { value: 'power',    label: 'Power yoga', description: 'Strength-based, athletic approach' },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StepGoalCardio({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const { age, weight_kg, height_cm } = data;
-  const bmi = height_cm > 0 ? weight_kg / ((height_cm / 100) ** 2) : 0;
-  const g = data.goal_details.cardio ?? {} as Partial<CardioDetails>;
-  const upd = (partial: Partial<CardioDetails>) => setGoalDetail(set, data.goal_details, 'cardio', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Walking / Running / Cardio" subtitle="Cardio is paced to your current baseline so it's challenging but sustainable." />
-      <div>
-        <FieldLabel>Current cardio baseline</FieldLabel>
-        <RadioCards
-          value={g.baseline ?? ''}
-          onChange={v => upd({ baseline: v })}
-          options={[
-            { value: 'rarely_move',    label: 'I rarely move much' },
-            { value: 'casual_walking', label: 'Casual walking (< 30 min/day)' },
-            { value: 'brisk_walk',     label: 'Brisk walking / occasional jog' },
-            { value: 'running',        label: 'Running with a regular pace / distance' },
-            { value: 'sports_hiit',    label: 'Sports or HIIT training regularly' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Activities you prefer</FieldLabel>
-        <MultiSelectChips
-          selected={g.activities ?? []}
-          onChange={v => upd({ activities: v })}
-          options={[
-            { id: 'walking',  label: 'Walking' },
-            { id: 'jogging',  label: 'Jogging' },
-            { id: 'running',  label: 'Running' },
-            { id: 'cycling',  label: 'Cycling' },
-            { id: 'swimming', label: 'Swimming' },
-            { id: 'hiit',     label: 'HIIT / Circuit' },
-            { id: 'jump_rope',label: 'Jump rope' },
-          ]}
-        />
-        {(age > 55 || bmi > 30) && (
-          <p className="text-xs text-amber-400/70 mt-2">
-            {age > 55 ? 'Low-impact options like walking and cycling are highlighted for your age group.' : 'We\'ll ease you in with walk-run intervals based on your BMI.'}
-          </p>
-        )}
-      </div>
-      <div>
-        <FieldLabel>Main goal</FieldLabel>
-        <RadioCards
-          value={g.goal ?? ''}
-          onChange={v => upd({ goal: v })}
-          options={[
-            { value: 'lose_fat',    label: 'Lose weight / burn fat' },
-            { value: 'endurance',   label: 'Build stamina & endurance' },
-            { value: 'heart_health',label: 'Heart health & longevity' },
-            { value: 'stress',      label: 'Stress relief' },
-            { value: 'event',       label: 'Train for an event (5K, 10K…)' },
-            { value: 'complement',  label: 'Complement strength training' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Days per week</FieldLabel>
-        <ButtonGrid
-          cols={4}
-          value={g.days_per_week ?? 0}
-          onChange={v => upd({ days_per_week: Number(v) })}
-          options={[
-            { value: '2', label: '2 days' }, { value: '3', label: '3 days' },
-            { value: '4', label: '4 days' }, { value: '5', label: '5 days' },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StepGoalHome({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const hasGym = data.activity_modalities.includes('gym');
-  const g = data.goal_details.home ?? {} as Partial<HomeDetails>;
-  const upd = (partial: Partial<HomeDetails>) => setGoalDetail(set, data.goal_details, 'home', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Home Workout" subtitle="Your plan is built entirely around what you have available — no gym required." />
-      <div>
-        <FieldLabel>Equipment you have at home</FieldLabel>
-        <MultiSelectChips
-          selected={g.equipment ?? []}
-          onChange={v => upd({ equipment: v })}
-          options={[
-            { id: 'none',             label: 'None (bodyweight only)' },
-            { id: 'resistance_bands', label: 'Resistance bands' },
-            { id: 'dumbbells',        label: 'Dumbbells' },
-            { id: 'pullup_bar',       label: 'Pull-up bar' },
-            { id: 'kettlebell',       label: 'Kettlebell' },
-            { id: 'yoga_mat',         label: 'Yoga mat' },
-            { id: 'jump_rope',        label: 'Jump rope' },
-          ]}
-        />
-      </div>
-      {/* Skip fitness_level and focus if gym is also selected — already captured */}
-      {!hasGym && (
-        <>
-          <div>
-            <FieldLabel>Your fitness level</FieldLabel>
-            <RadioCards
-              value={g.fitness_level ?? ''}
-              onChange={v => upd({ fitness_level: v })}
-              options={[
-                { value: 'beginner',     label: 'Beginner',     description: 'New to structured training' },
-                { value: 'intermediate', label: 'Intermediate', description: '6+ months of consistent exercise' },
-                { value: 'advanced',     label: 'Advanced',     description: '2+ years of regular training' },
-              ]}
-            />
-          </div>
-          <div>
-            <FieldLabel>Primary focus <span className="text-xs text-gray-500 font-normal">— up to 2</span></FieldLabel>
-            <MultiSelectChips
-              max={2}
-              selected={g.primary_focus ?? []}
-              onChange={v => upd({ primary_focus: v })}
-              options={[
-                { id: 'build_muscle',        label: 'Build muscle' },
-                { id: 'lose_fat',            label: 'Lose fat' },
-                { id: 'improve_strength',    label: 'Get stronger' },
-                { id: 'improve_flexibility', label: 'Improve flexibility' },
-                { id: 'prepare_long_term',   label: 'General fitness' },
-              ]}
-            />
-          </div>
-        </>
-      )}
-      {hasGym && (
-        <p className="text-xs text-gray-500 bg-gray-800/50 rounded-xl px-4 py-3">
-          Fitness level and focus are already captured from your Gym Workout answers.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function StepGoalPhysio({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.physio ?? {} as Partial<PhysioDetails>;
-  const upd = (partial: Partial<PhysioDetails>) => setGoalDetail(set, data.goal_details, 'physio', partial);
-
-  return (
-    <div className="space-y-5">
-      <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl px-4 py-3">
-        <p className="text-xs text-amber-300/80 leading-relaxed">
-          <strong className="text-amber-300">Medical disclaimer:</strong> FitPath's recovery guidance is informational only and not a substitute for professional medical advice. Always follow your healthcare provider's instructions.
-        </p>
-      </div>
-      <StepHeader title="Physiotherapy & Recovery" subtitle="These questions keep your plan safe and focused on what your body actually needs right now." />
-      <div>
-        <FieldLabel>Why did you select this?</FieldLabel>
-        <RadioCards
-          value={g.reason ?? ''}
-          onChange={v => upd({ reason: v })}
-          options={[
-            { value: 'recovering_injury', label: 'Recovering from an injury' },
-            { value: 'chronic_pain',      label: 'Managing chronic pain' },
-            { value: 'post_surgery',      label: 'Post-surgery rehabilitation' },
-            { value: 'preventing',        label: 'Preventing a recurring problem' },
-            { value: 'mobility',          label: 'Improving mobility & range of motion' },
-            { value: 'maintenance',       label: 'Athletic recovery & maintenance' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Focus areas <span className="text-xs text-gray-500 font-normal">— up to 3</span></FieldLabel>
-        <MultiSelectChips
-          max={3}
-          selected={g.areas ?? []}
-          onChange={v => upd({ areas: v })}
-          options={[
-            { id: 'lower_back',  label: 'Lower back' },
-            { id: 'neck',        label: 'Neck / upper back' },
-            { id: 'shoulders',   label: 'Shoulders' },
-            { id: 'knees',       label: 'Knees' },
-            { id: 'hips',        label: 'Hips' },
-            { id: 'ankles',      label: 'Ankles / feet' },
-            { id: 'wrists',      label: 'Wrists / elbows' },
-            { id: 'core',        label: 'Core' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>How long has this been an issue?</FieldLabel>
-        <RadioCards
-          value={g.duration ?? ''}
-          onChange={v => upd({ duration: v })}
-          options={[
-            { value: 'recent',         label: 'Recent (< 1 month)' },
-            { value: 'few_months',     label: 'A few months' },
-            { value: 'chronic',        label: 'Chronic (6+ months)' },
-            { value: 'post_surgery',   label: 'Post-surgery' },
-          ]}
-        />
-        {g.duration === 'post_surgery' && (
-          <p className="text-xs text-amber-400/70 mt-2">We'll only include gentle mobility work. Validate with your surgeon before starting.</p>
-        )}
-      </div>
-      <div>
-        <FieldLabel>Are you currently working with a physio or doctor?</FieldLabel>
-        <RadioCards
-          value={g.has_professional ?? ''}
-          onChange={v => upd({ has_professional: v })}
-          options={[
-            { value: 'yes_active',   label: 'Yes, actively in treatment' },
-            { value: 'no',           label: 'No, self-managing' },
-            { value: 'was_not_now',  label: 'I was, but not currently' },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StepGoalDiet({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.diet ?? {} as Partial<DietDetails>;
-  const upd = (partial: Partial<DietDetails>) => setGoalDetail(set, data.goal_details, 'diet', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Diet & Nutrition" subtitle={`Your meal plan uses ${data.country ? `real ${data.country} ingredients` : 'ingredients available where you live'} and your exact preferences — not generic advice.`} />
-      <div>
-        <FieldLabel>Your diet type</FieldLabel>
-        <RadioCards
-          value={g.diet_type ?? ''}
-          onChange={v => upd({ diet_type: v })}
-          options={[
-            { value: 'veg',                        label: 'Vegetarian (no eggs, no meat)' },
-            { value: 'veg_eggs',                   label: 'Vegetarian + Eggs' },
-            { value: 'veg_eggs_occasional_chicken', label: 'Veg + Eggs + Occasional chicken' },
-            { value: 'non_veg',                    label: 'Non-vegetarian (all foods)' },
-            { value: 'jain',                       label: 'Jain (no root vegetables)' },
-            { value: 'sattvic',                    label: 'Sattvic (no onion / garlic / meat)' },
-            { value: 'vegan',                      label: 'Vegan' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Main dietary goal</FieldLabel>
-        <RadioCards
-          value={g.dietary_goal ?? ''}
-          onChange={v => upd({ dietary_goal: v })}
-          options={[
-            { value: 'lose_weight',           label: 'Lose weight' },
-            { value: 'gain_weight',           label: 'Gain weight / build muscle' },
-            { value: 'general',               label: 'Maintain weight, improve quality' },
-            { value: 'condition_management',  label: 'Manage a health condition' },
-          ]}
-        />
-      </div>
-      {g.dietary_goal === 'condition_management' && (
-        <div>
-          <FieldLabel>Which condition(s)?</FieldLabel>
-          <MultiSelectChips
-            selected={g.conditions ?? []}
-            onChange={v => upd({ conditions: v })}
-            options={[
-              { id: 'diabetes',    label: 'Diabetes / blood sugar' },
-              { id: 'pcos',        label: 'PCOS / hormonal' },
-              { id: 'thyroid',     label: 'Thyroid' },
-              { id: 'high_bp',     label: 'High blood pressure' },
-              { id: 'cholesterol', label: 'High cholesterol' },
-              { id: 'ibs',         label: 'IBS / digestive issues' },
-            ]}
-          />
-        </div>
-      )}
-      <div>
-        <FieldLabel>Cuisine style <span className="text-xs text-gray-500 font-normal">— select all you enjoy</span></FieldLabel>
-        <MultiSelectChips
-          selected={g.cuisine_style ?? []}
-          onChange={v => upd({ cuisine_style: v })}
-          options={getCuisineOptions(data.country)}
-        />
-      </div>
-      <TagInput
-        label="Food allergies"
-        tags={g.allergies ?? []}
-        onChange={v => upd({ allergies: v })}
-        placeholder="e.g. peanuts, lactose, gluten"
-        hint="Press Enter or comma after each item"
-        optional
-      />
-      <TagInput
-        label="Foods you strongly dislike"
-        tags={g.food_dislikes ?? []}
-        onChange={v => upd({ food_dislikes: v })}
-        placeholder="e.g. broccoli, mushrooms"
-        hint="Press Enter or comma after each item"
-        optional
-      />
-    </div>
-  );
-}
-
-function StepGoalSupplements({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const g = data.goal_details.supplements ?? {} as Partial<SupplementDetails>;
-  const upd = (partial: Partial<SupplementDetails>) => setGoalDetail(set, data.goal_details, 'supplements', partial);
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Supplements" subtitle="We recommend only what you actually need — nothing unnecessary, all available in your region." />
-      <div>
-        <FieldLabel>Supplements you currently take <span className="text-xs text-gray-500 font-normal">— select all that apply</span></FieldLabel>
-        <MultiSelectChips
-          selected={g.current ?? []}
-          onChange={v => upd({ current: v })}
-          options={[
-            { id: 'protein_powder', label: 'Protein powder' },
-            { id: 'creatine',       label: 'Creatine' },
-            { id: 'multivitamin',   label: 'Multivitamin' },
-            { id: 'omega3',         label: 'Omega-3' },
-            { id: 'vitamin_d',      label: 'Vitamin D' },
-            { id: 'iron',           label: 'Iron' },
-            { id: 'b12',            label: 'B12' },
-            { id: 'pre_workout',    label: 'Pre-workout' },
-            { id: 'nothing',        label: 'Nothing currently' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>What do you want supplements to help with? <span className="text-xs text-gray-500 font-normal">— up to 3</span></FieldLabel>
-        <MultiSelectChips
-          max={3}
-          selected={g.goals ?? []}
-          onChange={v => upd({ goals: v })}
-          options={[
-            { id: 'fill_gaps',       label: 'Fill nutritional gaps' },
-            { id: 'muscle_growth',   label: 'Muscle growth' },
-            { id: 'energy',          label: 'Energy & performance' },
-            { id: 'hair_skin',       label: 'Hair, skin & nails' },
-            { id: 'immunity',        label: 'Immunity' },
-            { id: 'hormonal',        label: 'Hormonal support (PCOS/thyroid)' },
-            { id: 'recovery',        label: 'Recovery & joint health' },
-          ]}
-        />
-      </div>
-      <div>
-        <FieldLabel>Monthly supplement budget</FieldLabel>
-        <RadioCards
-          value={g.budget ?? ''}
-          onChange={v => upd({ budget: v })}
-          options={getSupplementBudgetOptions(data.country)}
-        />
-      </div>
-      <div>
-        <FieldLabel>Preference for vegetarian-certified supplements</FieldLabel>
-        <ButtonGrid
-          cols={2}
-          value={g.veg_preferred ? 'yes' : (g.veg_preferred === false ? 'no' : '')}
-          onChange={v => upd({ veg_preferred: v === 'yes' })}
-          options={[
-            { value: 'yes', label: 'Yes, strictly veg' },
-            { value: 'no',  label: 'No preference' },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StepGoalConcerns({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
-  const { age, gender } = data;
-  const g = data.goal_details.concerns ?? {} as Partial<ConcernsDetails>;
-  const upd = (partial: Partial<ConcernsDetails>) => setGoalDetail(set, data.goal_details, 'concerns', partial);
-
-  const allConcerns = [
-    { id: 'Stress / anxiety',            label: 'Stress / anxiety' },
-    { id: 'Sleep quality',               label: 'Sleep quality' },
-    { id: 'Hair fall / thinning',         label: 'Hair fall / thinning' },
-    { id: 'Skin concerns',               label: 'Skin concerns / acne' },
-    { id: 'PCOS / hormonal imbalance',   label: 'PCOS / hormonal imbalance' },
-    { id: 'Thyroid',                     label: 'Thyroid (hypo/hyper)' },
-    { id: 'Diabetes risk / blood sugar', label: 'Diabetes risk / blood sugar' },
-    { id: 'High blood pressure',         label: 'High blood pressure' },
-    { id: 'High cholesterol',            label: 'High cholesterol' },
-    { id: 'Digestive issues',            label: 'Digestive issues / acidity' },
-    { id: 'Low immunity',                label: 'Low immunity / frequent illness' },
-    { id: 'Chronic fatigue / low energy',label: 'Chronic fatigue / low energy' },
-    { id: 'Posture & back pain',         label: 'Posture & back pain' },
-    { id: 'Menstrual health',            label: 'Menstrual health' },
-  ];
-
-  // Re-order based on context
-  const sorted = [...allConcerns].sort((a) => {
-    if (gender === 'female' && (a.id === 'PCOS / hormonal imbalance' || a.id === 'Menstrual health')) return -1;
-    if (age > 45 && (a.id === 'High blood pressure' || a.id === 'Diabetes risk / blood sugar' || a.id === 'High cholesterol')) return -1;
-    if (age < 25 && (a.id === 'Skin concerns' || a.id === 'Hair fall / thinning')) return -1;
-    return 0;
-  });
-
-  return (
-    <div className="space-y-5">
-      <StepHeader title="Other Health Concerns" subtitle="These get woven into your plan as targeted nutrition, habit, and lifestyle adjustments — not a separate programme." />
-      <div>
-        <FieldLabel>Your concerns</FieldLabel>
-        <MultiSelectChips
-          selected={g.items ?? []}
-          onChange={v => upd({ items: v })}
-          options={sorted}
-        />
-      </div>
-      <div>
-        <FieldLabel>Are you currently on medication for any of these?</FieldLabel>
-        <RadioCards
-          value={g.on_medication ?? ''}
-          onChange={v => upd({ on_medication: v })}
-          options={[
-            { value: 'yes_some',      label: 'Yes, for some of them' },
-            { value: 'no',            label: 'No' },
-            { value: 'prefer_not_say',label: 'Prefer not to say' },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
 function StepLifestyle({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
   const hasWorkout = data.activity_modalities.some(m => ['gym', 'home', 'cardio', 'yoga'].includes(m));
 
@@ -1404,7 +452,7 @@ function StepLifestyle({ data, set }: { data: OnboardingData; set: <K extends ke
   );
 }
 
-function StepPlanConfirm({ data, set, loading }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void; loading: boolean }) {
+function StepPlanConfirm({ data, set }: { data: OnboardingData; set: <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => void }) {
   const mods = data.activity_modalities;
   const bmi = data.height_cm > 0 ? (data.weight_kg / ((data.height_cm / 100) ** 2)).toFixed(1) : '—';
 
@@ -1572,7 +620,7 @@ function StepTrackSetup({ data, set }: { data: OnboardingData; set: <K extends k
   );
 }
 
-function StepTrackConfirm({ data, loading }: { data: OnboardingData; loading: boolean }) {
+function StepTrackConfirm({ data }: { data: OnboardingData }) {
   const selected = TRACKERS.filter(t => data.tracking_config.selected_trackers.includes(t.id));
   return (
     <div className="space-y-5">
@@ -1604,6 +652,23 @@ function StepTrackConfirm({ data, loading }: { data: OnboardingData; loading: bo
 
 // ========== VALIDATION ==========
 
+function validateModalityFields(modality: GoalModality, data: OnboardingData): string | null {
+  const definition = MODALITY_REGISTRY[modality];
+  const ctx = buildFieldRenderCtx(data);
+  const details = (data.goal_details[modality] ?? {}) as Record<string, unknown>;
+  for (const field of definition.uiFields) {
+    if (field.visibleIf && !field.visibleIf(ctx)) continue;
+    const required = typeof field.required === 'function' ? field.required(ctx) : field.required;
+    if (!required) continue;
+    const value = details[field.key];
+    const isEmpty = field.kind === 'multiselect' || field.kind === 'tags'
+      ? !(Array.isArray(value) && value.length > 0)
+      : value === undefined || value === null || value === '' || value === 0;
+    if (isEmpty) return field.requiredMessage ?? 'Please complete this field.';
+  }
+  return null;
+}
+
 function validateStep(stepId: StepId, data: OnboardingData): string | null {
   switch (stepId) {
     case 'about_you': {
@@ -1621,56 +686,22 @@ function validateStep(stepId: StepId, data: OnboardingData): string | null {
       return data.onboarding_path ? null : 'Please select how you want to use FitPath.';
     case 'goal_selection':
       return data.activity_modalities.length > 0 ? null : 'Select at least one goal to continue.';
-    case 'goal_gym': {
-      const g = data.goal_details.gym;
-      if (!g?.experience)                    return 'Please tell us about your gym experience.';
-      if (!g?.equipment)                     return 'Please select your equipment access.';
-      if (!g?.days_per_week)                 return 'Please select how many days per week you can train.';
-      if (!g?.primary_focus?.length)         return 'Please select at least one focus area.';
-      return null;
-    }
-    case 'goal_yoga': {
-      const g = data.goal_details.yoga;
-      if (!g?.experience)                    return 'Please tell us about your yoga experience.';
-      if (!g?.goals?.length)                 return 'Please select at least one yoga goal.';
-      return null;
-    }
-    case 'goal_cardio': {
-      const g = data.goal_details.cardio;
-      if (!g?.baseline)                      return 'Please describe your current cardio baseline.';
-      if (!g?.goal)                          return 'Please select your main cardio goal.';
-      return null;
-    }
-    case 'goal_home': {
-      const g = data.goal_details.home;
-      const hasGym = data.activity_modalities.includes('gym');
-      if (!hasGym && !g?.fitness_level)      return 'Please select your current fitness level.';
-      if (!hasGym && !g?.primary_focus?.length) return 'Please select at least one focus area.';
-      return null;
-    }
-    case 'goal_physio': {
-      const g = data.goal_details.physio;
-      if (!g?.reason)                        return 'Please tell us why you selected physiotherapy & recovery.';
-      if (!g?.areas?.length)                 return 'Please select at least one area to focus on.';
-      if (!g?.duration)                      return 'Please select how long this has been an issue.';
-      return null;
-    }
-    case 'goal_diet': {
-      const g = data.goal_details.diet;
-      if (!g?.diet_type)                     return 'Please select your diet type.';
-      if (!g?.dietary_goal)                  return 'Please select your main dietary goal.';
-      return null;
-    }
-    case 'goal_supplements': {
-      const g = data.goal_details.supplements;
-      if (!g?.goals?.length)                 return 'Please select at least one supplement goal.';
-      if (!g?.budget)                        return 'Please select your monthly supplement budget.';
-      return null;
-    }
-    case 'goal_concerns': {
-      const g = data.goal_details.concerns;
-      return g?.items?.length ? null : 'Please select at least one health concern.';
-    }
+    case 'goal_gym':
+      return validateModalityFields('gym', data);
+    case 'goal_yoga':
+      return validateModalityFields('yoga', data);
+    case 'goal_cardio':
+      return validateModalityFields('cardio', data);
+    case 'goal_home':
+      return validateModalityFields('home', data);
+    case 'goal_physio':
+      return validateModalityFields('physio', data);
+    case 'goal_diet':
+      return validateModalityFields('diet', data);
+    case 'goal_supplements':
+      return validateModalityFields('supplements', data);
+    case 'goal_concerns':
+      return validateModalityFields('concerns', data);
     case 'lifestyle': {
       if (!data.job_type)                    return 'Please tell us what your typical day looks like.';
       const hasWorkout = data.activity_modalities.some(m => ['gym', 'home', 'cardio', 'yoga'].includes(m));
@@ -1719,10 +750,10 @@ export function OnboardingPage() {
   useEffect(() => {
     if (!user) { setPrefilling(false); return; }
     async function load() {
-      const [{ data: hp }, { data: prof }, { data: tc }] = await Promise.all([
-        supabase.from('health_profiles').select('*').eq('user_id', user!.id).maybeSingle(),
-        supabase.from('profiles').select('display_name, country, onboarding_path').eq('id', user!.id).maybeSingle(),
-        supabase.from('tracking_config').select('*').eq('user_id', user!.id).maybeSingle(),
+      const [hp, prof, tc] = await Promise.all([
+        HealthProfileRepository.getForUser(user!.id),
+        ProfileRepository.getForUser(user!.id),
+        TrackingConfigRepository.getForUser(user!.id),
       ]);
 
       if (!hp && !prof) { setPrefilling(false); return; }
@@ -1797,15 +828,14 @@ export function OnboardingPage() {
     ];
 
     await Promise.all([
-      supabase.from('profiles').update({
+      ProfileRepository.update(user.id, {
         display_name: d.display_name.trim() || undefined,
         country: d.country || null,
         onboarding_path: d.onboarding_path,
         ...(browserTimezone ? { timezone: browserTimezone } : {}),
-      }).eq('id', user.id),
+      }),
 
-      supabase.from('health_profiles').upsert({
-        user_id: user.id,
+      HealthProfileRepository.upsert(user.id, {
         age: d.age || null,
         weight_kg: d.weight_kg || null,
         height_cm: d.height_cm || null,
@@ -1829,11 +859,11 @@ export function OnboardingPage() {
         goal_timeline_months: d.goal_timeline_months || null,
         personalization_comments: sanitizeComment(d.personalization_comments),
         activity_modalities: modalities,
-        onboarding_details: gd,
+        onboarding_details: gd as unknown as Json,
         stress_level: d.stress_level || null,
         hydration_level: d.hydration_level || null,
         job_type: d.job_type || null,
-      }, { onConflict: 'user_id' }),
+      }),
     ]);
   }
 
@@ -1866,7 +896,7 @@ export function OnboardingPage() {
       await saveDraft(data);
       // Stamp onboarding time — edge function uses this to bypass the 30-day
       // rate limit when an existing user re-onboards and requests a fresh plan.
-      await supabase.from('profiles').update({ last_onboarded_at: new Date().toISOString() }).eq('id', user!.id);
+      await ProfileRepository.update(user!.id, { last_onboarded_at: new Date().toISOString() });
       navigate('/generate-plan');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
@@ -1882,15 +912,14 @@ export function OnboardingPage() {
     try {
       await saveDraft(data);
       // Save tracking config
-      await supabase.from('tracking_config').upsert({
-        user_id: user!.id,
+      await TrackingConfigRepository.upsert(user!.id, {
         selected_trackers: data.tracking_config.selected_trackers,
         reminder_morning: data.tracking_config.reminder_morning || null,
         reminder_evening: data.tracking_config.reminder_evening || null,
         reminder_style: data.tracking_config.reminder_style,
-      }, { onConflict: 'user_id' });
+      });
       // Mark onboarding complete for tracking users
-      await supabase.from('profiles').update({ onboarding_complete: true }).eq('id', user!.id);
+      await ProfileRepository.update(user!.id, { onboarding_complete: true });
       await refreshProfile();
       navigate('/dashboard');
     } catch (e: unknown) {
@@ -1912,23 +941,22 @@ export function OnboardingPage() {
       case 'about_you':         return <StepAboutYou data={data} set={set} />;
       case 'intention':         return <StepIntention data={data} set={set} />;
       case 'goal_selection':    return <StepGoalSelection data={data} set={set} />;
-      case 'goal_gym':          return <StepGoalGym data={data} set={set} />;
-      case 'goal_yoga':         return <StepGoalYoga data={data} set={set} />;
-      case 'goal_cardio':       return <StepGoalCardio data={data} set={set} />;
-      case 'goal_home':         return <StepGoalHome data={data} set={set} />;
-      case 'goal_physio':       return <StepGoalPhysio data={data} set={set} />;
-      case 'goal_diet':         return <StepGoalDiet data={data} set={set} />;
-      case 'goal_supplements':  return <StepGoalSupplements data={data} set={set} />;
-      case 'goal_concerns':     return <StepGoalConcerns data={data} set={set} />;
+      case 'goal_gym':          return <StepGoalModality modality="gym" data={data} set={set} />;
+      case 'goal_yoga':         return <StepGoalModality modality="yoga" data={data} set={set} />;
+      case 'goal_cardio':       return <StepGoalModality modality="cardio" data={data} set={set} />;
+      case 'goal_home':         return <StepGoalModality modality="home" data={data} set={set} />;
+      case 'goal_physio':       return <StepGoalModality modality="physio" data={data} set={set} />;
+      case 'goal_diet':         return <StepGoalModality modality="diet" data={data} set={set} />;
+      case 'goal_supplements':  return <StepGoalModality modality="supplements" data={data} set={set} />;
+      case 'goal_concerns':     return <StepGoalModality modality="concerns" data={data} set={set} />;
       case 'lifestyle':         return <StepLifestyle data={data} set={set} />;
-      case 'plan_confirm':      return <StepPlanConfirm data={data} set={set} loading={loading} />;
+      case 'plan_confirm':      return <StepPlanConfirm data={data} set={set} />;
       case 'track_setup':       return <StepTrackSetup data={data} set={set} />;
-      case 'track_confirm':     return <StepTrackConfirm data={data} loading={loading} />;
+      case 'track_confirm':     return <StepTrackConfirm data={data} />;
       default:                  return null;
     }
   }
 
-  const isLastStep = stepIndex === stepSequence.length - 1;
   const isPlanConfirm = currentStep === 'plan_confirm';
   const isTrackConfirm = currentStep === 'track_confirm';
 

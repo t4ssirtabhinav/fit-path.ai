@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
+import { getPromptInfo } from "../../../src/config/modalities/shared.ts";
 
 const DEV_ORIGINS = [
   "http://localhost:5173",
@@ -122,18 +123,6 @@ function safeList(val: unknown, fallback = "none"): string {
   return Array.isArray(val) && val.length > 0 ? (val as string[]).join(", ") : fallback;
 }
 
-// Modalities that translate into structured workout days in weekly_schedule.
-// (diet/supplements/concerns shape other sections instead.)
-const WORKOUT_MODALITIES = new Set(["gym", "yoga", "cardio", "home", "physio"]);
-
-const MODALITY_LABELS: Record<string, string> = {
-  gym: "gym/strength training",
-  yoga: "yoga practice",
-  cardio: "cardio training",
-  home: "home workouts",
-  physio: "physiotherapy/rehab sessions",
-};
-
 // `injuries` historically also carried physio focus areas as "physio: <area>" entries.
 // Allergies now live in their own column (see migration add_allergies_column).
 function parseInjuries(raw: unknown): { plain: string[]; physioAreas: string[] } {
@@ -145,27 +134,8 @@ function parseInjuries(raw: unknown): { plain: string[]; physioAreas: string[] }
 }
 
 function describeModality(modality: string, details: Record<string, unknown> | undefined): string {
-  const d = details ?? {};
-  switch (modality) {
-    case "gym":
-      return `Gym/strength training — experience: ${d.experience ?? "unspecified"}, equipment access: ${d.equipment ?? "unspecified"}, ${d.days_per_week ?? "?"} sessions/week, focus areas: ${safeList(d.primary_focus)}`;
-    case "yoga":
-      return `Yoga — experience: ${d.experience ?? "unspecified"}, session length: ${d.session_duration ?? "unspecified"}, style: ${d.style ?? "general"}, goals: ${safeList(d.goals)}`;
-    case "cardio":
-      return `Cardio — current baseline: ${d.baseline ?? "unspecified"}, preferred activities: ${safeList(d.activities)}, goal: ${d.goal ?? "general fitness"}, ${d.days_per_week ?? "?"} sessions/week`;
-    case "home":
-      return `Home workouts — available equipment: ${safeList(d.equipment, "bodyweight only")}, space: ${d.space ?? "limited"}, level: ${d.fitness_level ?? "beginner"}, focus areas: ${safeList(d.primary_focus)}`;
-    case "physio":
-      return `Physiotherapy/rehab — reason: ${d.reason ?? "unspecified"}, target areas: ${safeList(d.areas)}, duration so far: ${d.duration ?? "unspecified"}, working with a professional: ${d.has_professional ?? "unknown"}`;
-    case "diet":
-      return `Diet/nutrition focus — type: ${d.diet_type ?? "unspecified"}, goal: ${d.dietary_goal ?? "general health"}, cuisine preferences: ${safeList(d.cuisine_style)}`;
-    case "supplements":
-      return `Supplements — currently taking: ${safeList(d.current)}, goals: ${safeList(d.goals)}, monthly budget: ${d.budget ?? "unspecified"}, prefers vegetarian sources: ${d.veg_preferred ? "yes" : "no"}`;
-    case "concerns":
-      return `Health concerns to factor in — ${safeList(d.items)}; currently on medication: ${d.on_medication ?? "unknown"}`;
-    default:
-      return modality;
-  }
+  const info = getPromptInfo(modality);
+  return info ? info.describeForPrompt(details) : modality;
 }
 
 // Derives a phase structure from the user's own timeline + starting point instead
@@ -211,7 +181,7 @@ function buildPrompt(hp: Record<string, unknown>): string {
   const activityLevel = (hp.activity_level as string) || "moderate";
   const dietType = (hp.diet_type as string) || "no specific diet type";
 
-  const hasWorkout = modalities.some((m) => WORKOUT_MODALITIES.has(m));
+  const hasWorkout = modalities.some((m) => getPromptInfo(m)?.isWorkoutModality ?? false);
   const hasDiet = modalities.includes("diet");
   const hasSupplements = modalities.includes("supplements");
   // "concerns" or a broad multi-modality selection signals interest in a holistic
@@ -229,7 +199,7 @@ function buildPrompt(hp: Record<string, unknown>): string {
   const addOnAreas: string[] = [];
 
   if (hasWorkout) {
-    const selectedWorkoutModalities = modalities.filter((m) => WORKOUT_MODALITIES.has(m)).map((m) => MODALITY_LABELS[m] ?? m);
+    const selectedWorkoutModalities = modalities.filter((m) => getPromptInfo(m)?.isWorkoutModality ?? false).map((m) => getPromptInfo(m)?.label ?? m);
     sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}) at roughly ${commitmentDays} active sessions/week. If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Mark non-active days as rest days.`);
     schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number }] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
   } else {

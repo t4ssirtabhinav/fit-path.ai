@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { TrendingDown, TrendingUp, Scale, Ruler, Calendar, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
+import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
+import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
+import { DailyLogRepository } from '../repositories/DailyLogRepository';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, addDays } from 'date-fns';
 import type { DailyLog } from '../types';
 
@@ -15,7 +17,7 @@ export function ProgressPage() {
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [activity, setActivity] = useState<DayActivity[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // Historical date view
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -42,20 +44,20 @@ export function ProgressPage() {
     const monthStart = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
     const monthEnd = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
-    const [measRes, tasksRes, logsRes] = await Promise.all([
-      supabase.from('body_measurements').select('measured_at, weight_kg, waist_cm').eq('user_id', user.id).gte('measured_at', thirtyDaysAgo).order('measured_at'),
-      supabase.from('daily_tasks').select('task_date, id').eq('user_id', user.id).gte('task_date', monthStart).lte('task_date', monthEnd),
-      supabase.from('task_logs').select('log_date, completed').eq('user_id', user.id).gte('log_date', monthStart).lte('log_date', monthEnd),
+    const [measurements, tasksData, logsData] = await Promise.all([
+      BodyMeasurementRepository.getSince(user.id, thirtyDaysAgo),
+      DailyTaskRepository.getDatesInRange(user.id, monthStart, monthEnd),
+      DailyTaskRepository.getLogsInRange(user.id, monthStart, monthEnd),
     ]);
 
-    setMeasurements((measRes.data ?? []) as Measurement[]);
+    setMeasurements(measurements as Measurement[]);
 
     const tasksByDate = new Map<string, number>();
-    for (const t of tasksRes.data ?? []) {
+    for (const t of tasksData) {
       tasksByDate.set(t.task_date, (tasksByDate.get(t.task_date) ?? 0) + 1);
     }
     const completedByDate = new Map<string, number>();
-    for (const l of logsRes.data ?? []) {
+    for (const l of logsData) {
       if (l.completed) completedByDate.set(l.log_date, (completedByDate.get(l.log_date) ?? 0) + 1);
     }
 
@@ -72,16 +74,16 @@ export function ProgressPage() {
 
   async function loadDateData() {
     if (!user) return;
-    const [logRes, tasksRes] = await Promise.all([
-      supabase.from('daily_logs').select('*').eq('user_id', user.id).eq('log_date', selectedDate).maybeSingle(),
-      supabase.from('daily_tasks').select('id, category, title').eq('user_id', user.id).eq('task_date', selectedDate),
+    const [log, tasksData] = await Promise.all([
+      DailyLogRepository.getForDate(user.id, selectedDate),
+      DailyTaskRepository.getForDate(user.id, selectedDate),
     ]);
-    setDateLog(logRes.data);
+    setDateLog(log);
 
-    if (tasksRes.data && tasksRes.data.length > 0) {
-      const logsRes = await supabase.from('task_logs').select('task_id, completed').eq('user_id', user.id).eq('log_date', selectedDate);
-      const logMap = new Map((logsRes.data ?? []).map(l => [l.task_id, l.completed]));
-      setDateTasks((tasksRes.data ?? []).map(t => ({
+    if (tasksData.length > 0) {
+      const logsData = await DailyTaskRepository.getLogsForDate(user.id, selectedDate);
+      const logMap = new Map(logsData.map(l => [l.task_id, l.completed]));
+      setDateTasks(tasksData.map(t => ({
         category: t.category,
         title: t.title,
         completed: logMap.get(t.id) ?? false,
@@ -189,7 +191,7 @@ export function ProgressPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
               <XAxis dataKey="week" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
-              <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#fff' }} formatter={(v: number) => [`${v}%`, 'Completion']} />
+              <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '12px', color: '#fff' }} formatter={(v: number | string | readonly (number | string)[] | undefined) => [`${Array.isArray(v) ? v[0] : (v ?? 0)}%`, 'Completion']} />
               <Bar dataKey="completion" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

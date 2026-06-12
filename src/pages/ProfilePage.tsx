@@ -1,11 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Shield, Download, Trash2, LogOut, ChevronRight, Edit3, Check, X, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import type { HealthProfile } from '../types';
+import { ProfileRepository } from '../repositories/ProfileRepository';
+import { HealthProfileRepository } from '../repositories/HealthProfileRepository';
+import { PlanRepository } from '../repositories/PlanRepository';
+import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
+import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
+import { useHealthProfile } from '../hooks/useHealthProfile';
 
 interface PlanHistoryItem {
   id: string;
@@ -17,7 +22,7 @@ interface PlanHistoryItem {
 export function ProfilePage() {
   const { user, profile, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
-  const [hp, setHp] = useState<HealthProfile | null>(null);
+  const { healthProfile: hp } = useHealthProfile(user?.id);
   const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
@@ -27,18 +32,13 @@ export function ProfilePage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('health_profiles').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => {
-      setHp(data);
-    });
-    supabase.from('plans').select('id, phase, is_active, generated_at').eq('user_id', user.id).order('generated_at', { ascending: false }).then(({ data }) => {
-      setPlanHistory(data ?? []);
-    });
+    PlanRepository.getHistory(user.id).then(setPlanHistory);
   }, [user]);
 
   async function saveName() {
     if (!user || !newName.trim()) return;
     setSavingName(true);
-    await supabase.from('profiles').update({ display_name: newName.trim() }).eq('id', user.id);
+    await ProfileRepository.update(user.id, { display_name: newName.trim() });
     await refreshProfile();
     setSavingName(false);
     setEditingName(false);
@@ -47,17 +47,17 @@ export function ProfilePage() {
   async function exportData() {
     if (!user) return;
     setExportLoading(true);
-    const [measRes, logsRes, plansRes] = await Promise.all([
-      supabase.from('body_measurements').select('*').eq('user_id', user.id),
-      supabase.from('task_logs').select('*').eq('user_id', user.id),
-      supabase.from('plans').select('phase, plan_data, generated_at').eq('user_id', user.id),
+    const [measurements, taskLogs, plans] = await Promise.all([
+      BodyMeasurementRepository.getAllForUser(user.id),
+      DailyTaskRepository.getAllLogs(user.id),
+      PlanRepository.getAllPlanData(user.id),
     ]);
     const exportObj = {
       profile,
       health_profile: hp,
-      measurements: measRes.data,
-      task_logs: logsRes.data,
-      plans: plansRes.data,
+      measurements,
+      task_logs: taskLogs,
+      plans,
       exported_at: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
@@ -73,8 +73,8 @@ export function ProfilePage() {
   async function deleteAccount() {
     if (!user) return;
     // Delete all user data (CASCADE handles most of it)
-    await supabase.from('health_profiles').delete().eq('user_id', user.id);
-    await supabase.from('profiles').delete().eq('id', user.id);
+    await HealthProfileRepository.delete(user.id);
+    await ProfileRepository.delete(user.id);
     await supabase.auth.signOut();
   }
 
