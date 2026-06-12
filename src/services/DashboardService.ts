@@ -6,17 +6,17 @@ import type { Database } from '../types/database';
 
 type DailyTaskInsert = Database['public']['Tables']['daily_tasks']['Insert'];
 
-const TRACKER_TASKS: Record<string, { category: DailyTask['category']; title: string; description: string }> = {
+const TRACKER_TASKS: Record<string, { category: DailyTask['category']; title: string; description: string; unit?: string }> = {
   workouts: { category: 'workout', title: 'Log your workout', description: "Record the exercises, sets, reps, and weights from today's session." },
-  steps: { category: 'habit', title: 'Log steps & distance', description: 'Track how much you moved today.' },
+  steps: { category: 'habit', title: 'Log steps & distance', description: 'Track how much you moved today.', unit: 'steps' },
   meals: { category: 'meal', title: 'Log your meals', description: 'Note what you ate today using the Log notes button.' },
   macros: { category: 'meal', title: 'Log your macros', description: 'Track protein, carbs, fat, and calories.' },
   supplements: { category: 'supplement', title: 'Log supplements', description: 'Check off the supplements you took today.' },
-  measurements: { category: 'habit', title: 'Log body measurements', description: 'Use the Log weight button to record weight, waist, and other measurements.' },
+  measurements: { category: 'habit', title: 'Log body measurements', description: 'Use the Log weight button to record weight, waist, and other measurements.', unit: 'measurement' },
   vitals: { category: 'habit', title: 'Log vitals', description: 'Record blood pressure, heart rate, or blood sugar via Log notes.' },
   sleep: { category: 'sleep', title: 'Log sleep', description: 'Note your bedtime, wake time, and sleep quality.' },
-  water: { category: 'habit', title: 'Log water intake', description: 'Track how much water you drank today.' },
-  mood: { category: 'habit', title: 'Log mood & energy', description: 'Rate your energy level using the Log notes button.' },
+  water: { category: 'habit', title: 'Log water intake', description: 'Track how much water you drank today.', unit: 'glasses' },
+  mood: { category: 'habit', title: 'Log mood & energy', description: 'Rate your energy level using the Log notes button.', unit: 'rating' },
 };
 
 export const DashboardService = {

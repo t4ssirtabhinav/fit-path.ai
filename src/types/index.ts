@@ -74,6 +74,7 @@ export interface Exercise {
   rest_seconds: number;
   intensity_guidance?: string;
   progression_notes?: string;
+  exercise_type?: 'reps_weight' | 'duration';
 }
 
 export interface MealPlan {

@@ -11,6 +11,7 @@ const ExerciseSchema = z.object({
   rest_seconds: z.number(),
   intensity_guidance: z.string().optional(),
   progression_notes: z.string().optional(),
+  exercise_type: z.enum(['reps_weight', 'duration']).optional(),
 });
 
 const WorkoutSchema = z.object({

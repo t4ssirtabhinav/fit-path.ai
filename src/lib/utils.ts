@@ -1,4 +1,4 @@
-import type { PlanData, DaySchedule, Exercise } from '../types';
+import type { PlanData, DaySchedule, Exercise, DailyTask } from '../types';
 
 export function cn(...classes: (string | undefined | false | null)[]) {
   return classes.filter(Boolean).join(' ');
@@ -34,6 +34,22 @@ export function getTodaysExercises(planData: PlanData | null, timezone: string =
 export function parseLeadingInt(value: string): number {
   const match = value.match(/\d+/);
   return match ? parseInt(match[0], 10) : 0;
+}
+
+const DURATION_REPS_PATTERN = /min|sec|hour|hr\b|hold|km|round|amrap/i;
+
+export function getExerciseType(ex: Exercise): 'reps_weight' | 'duration' {
+  if (ex.exercise_type) return ex.exercise_type;
+  return DURATION_REPS_PATTERN.test(ex.reps) ? 'duration' : 'reps_weight';
+}
+
+export function getTaskInputType(task: DailyTask): 'numeric' | 'rating' | 'notes' | 'measurement' | 'exercise' | 'none' {
+  if (task.category === 'workout') return 'exercise';
+  if (task.category === 'supplement') return 'none';
+  if (task.unit === 'rating') return 'rating';
+  if (task.unit === 'measurement') return 'measurement';
+  if (task.unit) return 'numeric';
+  return 'notes';
 }
 
 export function calcBMI(weightKg: number, heightCm: number): number {

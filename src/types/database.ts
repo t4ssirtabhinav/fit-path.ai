@@ -222,6 +222,8 @@ export interface Database {
           task_date: string;
           exercise_name: string;
           sets: Json;
+          duration_minutes: number | null;
+          notes: string | null;
           source: 'plan' | 'custom';
           created_at: string;
           updated_at: string;
@@ -232,6 +234,8 @@ export interface Database {
           task_date: string;
           exercise_name: string;
           sets?: Json;
+          duration_minutes?: number | null;
+          notes?: string | null;
           source?: 'plan' | 'custom';
         };
         Update: Partial<Database['public']['Tables']['exercise_logs']['Insert']>;

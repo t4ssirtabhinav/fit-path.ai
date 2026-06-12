@@ -54,6 +54,7 @@ const ExerciseSchema = z.object({
   rest_seconds: z.coerce.number(),
   intensity_guidance: z.string().min(1),
   progression_notes: z.string().min(1),
+  exercise_type: z.enum(["reps_weight", "duration"]).optional(),
 });
 
 const WorkoutSchema = z.object({
@@ -199,11 +200,11 @@ function getMedicalFlags(hp: Record<string, unknown>, physioAreas: string[]): st
 // intensity/pacing detail — keeps the unified Exercise schema meaningful across
 // strength, bodyweight, rehab, yoga and cardio sessions.
 const WORKOUT_STRUCTURE_GUIDANCE: Record<string, string> = {
-  gym: `For gym/strength sessions, list specific exercises (e.g. "Barbell Back Squat", "Incline Dumbbell Press") with concrete sets/reps and an "intensity_guidance" giving a weight range, %1RM, or RPE target appropriate to the user's experience level.`,
-  home: `For home workout sessions, list specific bodyweight or equipment-based exercises (e.g. "Push-ups", "Resistance Band Rows") with concrete sets/reps and an "intensity_guidance" describing tempo, variation, or resistance level to use.`,
-  physio: `For physiotherapy/rehab sessions, list specific rehab exercises targeting the flagged areas (e.g. "Glute Bridge", "Wall Slides") with concrete sets/reps and an "intensity_guidance" describing pain-monitoring guidance (e.g. "stop if pain exceeds 3/10").`,
-  yoga: `For yoga sessions, list specific poses/sequences (e.g. "Downward Dog", "Warrior II") as "exercises" — put the hold duration in "reps" (e.g. "30-45 sec hold") and put alignment/breathing cues in "intensity_guidance".`,
-  cardio: `For cardio sessions, list specific activities/intervals (e.g. "Brisk walk", "Incline treadmill interval") as "exercises" — put the duration in "reps" (e.g. "20 min") and put pace/heart-rate-zone guidance in "intensity_guidance".`,
+  gym: `For gym/strength sessions, list specific exercises (e.g. "Barbell Back Squat", "Incline Dumbbell Press") with concrete sets/reps and an "intensity_guidance" giving a weight range, %1RM, or RPE target appropriate to the user's experience level. Set "exercise_type" to "reps_weight".`,
+  home: `For home workout sessions, list specific bodyweight or equipment-based exercises (e.g. "Push-ups", "Resistance Band Rows") with concrete sets/reps and an "intensity_guidance" describing tempo, variation, or resistance level to use. Set "exercise_type" to "reps_weight".`,
+  physio: `For physiotherapy/rehab sessions, list specific rehab exercises targeting the flagged areas (e.g. "Glute Bridge", "Wall Slides") with concrete sets/reps and an "intensity_guidance" describing pain-monitoring guidance (e.g. "stop if pain exceeds 3/10"). Set "exercise_type" to "reps_weight".`,
+  yoga: `For yoga sessions, list specific poses/sequences (e.g. "Downward Dog", "Warrior II") as "exercises" — put the hold duration in "reps" (e.g. "30-45 sec hold") and put alignment/breathing cues in "intensity_guidance". Set "exercise_type" to "duration".`,
+  cardio: `For cardio sessions, list specific activities/intervals (e.g. "Brisk walk", "Incline treadmill interval") as "exercises" — put the duration in "reps" (e.g. "20 min") and put pace/heart-rate-zone guidance in "intensity_guidance". Set "exercise_type" to "duration".`,
 };
 
 function buildSupplementGuidance(): string {
@@ -250,7 +251,7 @@ function buildPrompt(hp: Record<string, unknown>): { prompt: string; requiresMed
     const selectedWorkoutModalities = selectedWorkoutModalityIds.map((m) => getPromptInfo(m)?.label ?? m);
     const structureGuidance = selectedWorkoutModalityIds.map((m) => WORKOUT_STRUCTURE_GUIDANCE[m]).filter(Boolean).join(" ");
     sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}) at roughly ${commitmentDays} active sessions/week. If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Mark non-active days as rest days. Every active workout day must list at least 3 concrete, specifically-named exercises/poses/activities — never a single vague placeholder like "Upper Body Workout" as an exercise (that belongs in the workout's "name" field, not its exercise list). For every exercise, "intensity_guidance" must give concrete, actionable guidance calibrated to this person's stated experience/fitness level, and "progression_notes" must describe how to advance that exercise across this plan's duration. ${structureGuidance}`);
-    schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number, "intensity_guidance": "string", "progression_notes": "string" }, ... at least 3 exercises ...] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
+    schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number, "intensity_guidance": "string", "progression_notes": "string", "exercise_type": "reps_weight"|"duration" }, ... at least 3 exercises ...] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
   } else {
     addOnAreas.push("structured workouts");
   }
