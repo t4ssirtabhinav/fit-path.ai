@@ -11,6 +11,12 @@ export type Buddy = Database['public']['Tables']['buddies']['Row'];
 export type DailyLog = Database['public']['Tables']['daily_logs']['Row'];
 export type Milestone = Database['public']['Tables']['milestones']['Row'];
 export type TrackingConfig = Database['public']['Tables']['tracking_config']['Row'];
+export type ExerciseLog = Database['public']['Tables']['exercise_logs']['Row'];
+
+export interface ExerciseSet {
+  reps: number;
+  weight: number;
+}
 
 export type TaskCategory = 'workout' | 'meal' | 'supplement' | 'habit' | 'sleep';
 

@@ -215,6 +215,28 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['task_logs']['Insert']>;
         Relationships: [];
       };
+      exercise_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          task_date: string;
+          exercise_name: string;
+          sets: Json;
+          source: 'plan' | 'custom';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          task_date: string;
+          exercise_name: string;
+          sets?: Json;
+          source?: 'plan' | 'custom';
+        };
+        Update: Partial<Database['public']['Tables']['exercise_logs']['Insert']>;
+        Relationships: [];
+      };
       body_measurements: {
         Row: {
           id: string;

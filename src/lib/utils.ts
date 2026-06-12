@@ -1,3 +1,5 @@
+import type { PlanData, DaySchedule, Exercise } from '../types';
+
 export function cn(...classes: (string | undefined | false | null)[]) {
   return classes.filter(Boolean).join(' ');
 }
@@ -20,6 +22,18 @@ export function yesterday(timezone: string = DEFAULT_TIMEZONE): string {
 export function getDayName(date: Date | string, timezone: string = DEFAULT_TIMEZONE): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return d.toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone }).toLowerCase() as string;
+}
+
+export function getTodaysExercises(planData: PlanData | null, timezone: string = DEFAULT_TIMEZONE): Exercise[] {
+  if (!planData?.weekly_schedule) return [];
+  const dayName = getDayName(new Date(), timezone);
+  const day = (planData.weekly_schedule as unknown as Record<string, DaySchedule>)[dayName];
+  return day?.workout?.exercises ?? [];
+}
+
+export function parseLeadingInt(value: string): number {
+  const match = value.match(/\d+/);
+  return match ? parseInt(match[0], 10) : 0;
 }
 
 export function calcBMI(weightKg: number, heightCm: number): number {

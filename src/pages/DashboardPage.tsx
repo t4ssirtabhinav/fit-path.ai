@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   Flame, Dumbbell, Salad, Pill, CheckCircle2, Circle, Coffee,
-  Moon, Zap, ChevronRight, RefreshCw, BedDouble, Target, TrendingUp,
-  Info, X, MessageSquare
+  Moon, Zap, ChevronRight, ChevronDown, ChevronUp, RefreshCw, BedDouble, Target, TrendingUp,
+  Info, X, MessageSquare, Plus, Minus
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { PlanRepository } from '../repositories/PlanRepository';
@@ -12,14 +12,17 @@ import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { StreakRepository } from '../repositories/StreakRepository';
 import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
 import { DailyLogRepository } from '../repositories/DailyLogRepository';
+import { ExerciseLogRepository } from '../repositories/ExerciseLogRepository';
 import { BuddyRepository } from '../repositories/BuddyRepository';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { StreakService } from '../services/StreakService';
 import { DashboardService } from '../services/DashboardService';
-import { today, DEFAULT_TIMEZONE } from '../lib/utils';
+import { today, DEFAULT_TIMEZONE, getTodaysExercises, parseLeadingInt } from '../lib/utils';
+import { usePlan } from '../hooks/usePlan';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
-import type { DailyTask, TaskLog, Streak, DailyLog } from '../types';
+import type { DailyTask, TaskLog, Streak, DailyLog, ExerciseLog, ExerciseSet } from '../types';
+import type { Json } from '../types/database';
 
 type TaskWithLog = DailyTask & { log?: TaskLog };
 
@@ -87,6 +90,12 @@ export function DashboardPage() {
   // Info popup for task descriptions
   const [infoTask, setInfoTask] = useState<TaskWithLog | null>(null);
 
+  // Exercise set logging
+  const { planData } = usePlan(user?.id);
+  const [exerciseLogs, setExerciseLogs] = useState<ExerciseLog[]>([]);
+  const [exerciseSets, setExerciseSets] = useState<Record<string, ExerciseSet[]>>({});
+  const [showExerciseLog, setShowExerciseLog] = useState(false);
+
   const [todayDate, setTodayDate] = useState(() => today(tz));
   const dateLabel = format(new Date(), 'EEEE, MMMM d');
 
@@ -107,11 +116,13 @@ export function DashboardPage() {
     if (!user) return;
     setLoading(true);
 
-    const [tasksData, logsData, streakData] = await Promise.all([
+    const [tasksData, logsData, streakData, exerciseLogsData] = await Promise.all([
       DailyTaskRepository.getForDate(user.id, todayDate),
       DailyTaskRepository.getLogsForDate(user.id, todayDate),
       StreakRepository.getForUser(user.id),
+      ExerciseLogRepository.getForDate(user.id, todayDate),
     ]);
+    setExerciseLogs(exerciseLogsData);
 
     const logMap = new Map(logsData.map(l => [l.task_id, l]));
     const enriched = tasksData.map(t => ({ ...t, log: logMap.get(t.id) }));
@@ -159,6 +170,67 @@ export function DashboardPage() {
   }, [user, todayDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const todaysExercises = getTodaysExercises(planData, tz);
+
+  useEffect(() => {
+    if (todaysExercises.length === 0) return;
+    setExerciseSets(prev => {
+      const next: Record<string, ExerciseSet[]> = {};
+      for (const ex of todaysExercises) {
+        const existingLog = exerciseLogs.find(l => l.exercise_name === ex.name);
+        if (existingLog) {
+          next[ex.name] = existingLog.sets as unknown as ExerciseSet[];
+        } else if (prev[ex.name]) {
+          next[ex.name] = prev[ex.name];
+        } else {
+          next[ex.name] = Array.from({ length: ex.sets }, () => ({ reps: parseLeadingInt(ex.reps), weight: 0 }));
+        }
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseLogs, planData]);
+
+  async function persistExerciseSets(exerciseName: string, sets: ExerciseSet[]) {
+    if (!user) return;
+    await ExerciseLogRepository.upsert({
+      user_id: user.id,
+      task_date: todayDate,
+      exercise_name: exerciseName,
+      sets: sets as unknown as Json,
+      source: 'plan',
+    });
+  }
+
+  function addSet(exerciseName: string) {
+    setExerciseSets(prev => {
+      const current = prev[exerciseName] ?? [];
+      const last = current[current.length - 1];
+      const updated = [...current, last ? { ...last } : { reps: 0, weight: 0 }];
+      void persistExerciseSets(exerciseName, updated);
+      return { ...prev, [exerciseName]: updated };
+    });
+  }
+
+  function removeSet(exerciseName: string, index: number) {
+    setExerciseSets(prev => {
+      const updated = (prev[exerciseName] ?? []).filter((_, i) => i !== index);
+      void persistExerciseSets(exerciseName, updated);
+      return { ...prev, [exerciseName]: updated };
+    });
+  }
+
+  function updateSet(exerciseName: string, index: number, field: keyof ExerciseSet, value: number) {
+    setExerciseSets(prev => ({
+      ...prev,
+      [exerciseName]: (prev[exerciseName] ?? []).map((s, i) => i === index ? { ...s, [field]: value } : s),
+    }));
+  }
+
+  function handleSetBlur(exerciseName: string) {
+    void persistExerciseSets(exerciseName, exerciseSets[exerciseName] ?? []);
+  }
 
   async function toggleTask(task: TaskWithLog) {
     if (!user || togglingId) return;
@@ -431,6 +503,72 @@ export function DashboardPage() {
                   )}
                 </button>
               ))}
+
+              {category === 'workout' && todaysExercises.length > 0 && (
+                <div className="pt-2 border-t border-gray-800/70">
+                  <button
+                    onClick={() => setShowExerciseLog(v => !v)}
+                    className="w-full flex items-center justify-between text-xs font-medium text-gray-400 hover:text-white transition-colors py-1"
+                  >
+                    <span>Log your sets</span>
+                    {showExerciseLog ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+
+                  {showExerciseLog && (
+                    <div className="space-y-3 mt-2">
+                      {todaysExercises.map(ex => (
+                        <div key={ex.name} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-3">
+                          <p className="text-sm font-medium text-white">{ex.name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Target: {ex.sets} x {ex.reps}
+                            {ex.intensity_guidance ? ` — ${ex.intensity_guidance}` : ''}
+                          </p>
+
+                          <div className="space-y-1.5 mt-2">
+                            {(exerciseSets[ex.name] ?? []).map((set, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 w-10">Set {i + 1}</span>
+                                <input
+                                  type="number"
+                                  value={set.reps}
+                                  onChange={e => updateSet(ex.name, i, 'reps', Number(e.target.value))}
+                                  onBlur={() => handleSetBlur(ex.name)}
+                                  placeholder="Reps"
+                                  className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <span className="text-xs text-gray-500">reps ×</span>
+                                <input
+                                  type="number"
+                                  value={set.weight}
+                                  onChange={e => updateSet(ex.name, i, 'weight', Number(e.target.value))}
+                                  onBlur={() => handleSetBlur(ex.name)}
+                                  placeholder="Weight"
+                                  className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <span className="text-xs text-gray-500">kg</span>
+                                <button
+                                  onClick={() => removeSet(ex.name, i)}
+                                  className="ml-auto text-gray-600 hover:text-red-400 transition-colors"
+                                >
+                                  <Minus className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <button
+                            onClick={() => addSet(ex.name)}
+                            className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 mt-2 transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add set
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         ))
