@@ -29,6 +29,7 @@ export function BuddyPage() {
   const [expandedBuddyId, setExpandedBuddyId] = useState<string | null>(selectedBuddyId);
   const [buddyTasks, setBuddyTasks] = useState<DailyTask[]>([]);
   const [buddyLogs, setBuddyLogs] = useState<TaskLog[]>([]);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
   const inviteLink = profile?.invite_code
     ? `${window.location.origin}/join/${profile.invite_code}`
@@ -69,6 +70,7 @@ export function BuddyPage() {
     // Separate pending incoming requests from active buddies
     const pending: typeof pendingRequests = [];
     const activeBuddyIds: string[] = [];
+    const relIdByBuddyId = new Map<string, string>();
 
     for (const rel of buddyRels) {
       if (rel.status === 'pending' && rel.recipient_id === user.id) {
@@ -77,6 +79,7 @@ export function BuddyPage() {
       } else if (rel.status === 'active') {
         const buddyId = rel.requester_id === user.id ? rel.recipient_id : rel.requester_id;
         activeBuddyIds.push(buddyId);
+        relIdByBuddyId.set(buddyId, rel.id);
       }
     }
     setPendingRequests(pending);
@@ -99,10 +102,12 @@ export function BuddyPage() {
           missedDays: s?.total_missed_days ?? 0,
           monthlyRate: Math.round((s?.monthly_completion_rate ?? 0) * 100),
           completionPct: Math.round((s?.monthly_completion_rate ?? 0) * 100),
-          buddyRelId: '',
+          buddyRelId: relIdByBuddyId.get(p.id) ?? '',
         };
       });
       setBuddies(details);
+    } else {
+      setBuddies([]);
     }
 
     setLoading(false);
@@ -165,13 +170,12 @@ export function BuddyPage() {
     setPendingRequests(prev => prev.filter(p => p.id !== req.id));
   }
 
-  async function removeBuddy(buddyId: string) {
-    if (!user) return;
-    await BuddyRepository.declineAllActiveFor(user.id);
-    // Also filter by the specific buddy
-    await BuddyRepository.declineAllActiveFor(buddyId);
-    setBuddies(prev => prev.filter(b => b.id !== buddyId));
+  async function removeBuddy(buddy: BuddyDetail) {
+    if (!user || !buddy.buddyRelId) return;
+    await BuddyRepository.updateStatus(buddy.buddyRelId, 'declined');
+    setBuddies(prev => prev.filter(b => b.id !== buddy.id));
     setExpandedBuddyId(null);
+    setConfirmRemoveId(null);
   }
 
   const myScore = myStreak.current * 10 + myStreak.totalActive;
@@ -261,7 +265,7 @@ export function BuddyPage() {
               <CardHeader>
                 <button
                   className="w-full flex items-center justify-between"
-                  onClick={() => setExpandedBuddyId(isExpanded ? null : buddy.id)}
+                  onClick={() => { setExpandedBuddyId(isExpanded ? null : buddy.id); setConfirmRemoveId(null); }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="relative">
@@ -339,9 +343,19 @@ export function BuddyPage() {
                     </div>
                   )}
 
-                  <button onClick={() => removeBuddy(buddy.id)} className="text-xs text-gray-600 hover:text-red-400 flex items-center gap-1 transition-colors">
-                    <X className="w-3 h-3" /> Remove buddy
-                  </button>
+                  {confirmRemoveId === buddy.id ? (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex items-center justify-between gap-3">
+                      <p className="text-xs text-red-300">Remove {buddy.name} as your buddy? This can't be undone.</p>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <Button size="sm" variant="danger" onClick={() => removeBuddy(buddy)}>Remove</Button>
+                        <Button size="sm" variant="secondary" onClick={() => setConfirmRemoveId(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmRemoveId(buddy.id)} className="text-xs text-gray-600 hover:text-red-400 flex items-center gap-1 transition-colors">
+                      <X className="w-3 h-3" /> Remove buddy
+                    </button>
+                  )}
                 </CardContent>
               )}
             </Card>
