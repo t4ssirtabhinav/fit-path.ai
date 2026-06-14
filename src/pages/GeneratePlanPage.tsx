@@ -135,7 +135,7 @@ export function GeneratePlanPage() {
             </div>
 
             {done && (
-              <Button onClick={() => navigate('/dashboard')} size="lg" className="w-full">
+              <Button variant="action" onClick={() => navigate('/dashboard')} size="lg" className="w-full">
                 <Sparkles className="w-4 h-4" />
                 View my plan
               </Button>

@@ -14,6 +14,7 @@ import { BodyMeasurementRepository } from '../repositories/BodyMeasurementReposi
 import { TrackingConfigRepository } from '../repositories/TrackingConfigRepository';
 import { TRACKERS } from '../config/trackers';
 import { useHealthProfile } from '../hooks/useHealthProfile';
+import { LegalFooter } from '../components/layout/LegalFooter';
 
 interface PlanHistoryItem {
   id: string;
@@ -559,6 +560,8 @@ export function ProfilePage() {
           FitPath provides general fitness and nutrition guidance only. This is not medical advice. Always consult a qualified healthcare professional before starting any new diet, supplement, or exercise programme.
         </p>
       </div>
+
+      <LegalFooter />
     </div>
   );
 }

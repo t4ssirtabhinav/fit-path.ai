@@ -11,6 +11,17 @@ export const ExerciseLogRepository = {
     return data ?? [];
   },
 
+  async getSince(userId: string, sinceDate: string): Promise<ExerciseLog[]> {
+    const { data, error } = await supabase
+      .from('exercise_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('task_date', sinceDate)
+      .order('task_date');
+    if (error) throw error;
+    return data ?? [];
+  },
+
   async upsert(entry: ExerciseLogInsert): Promise<void> {
     const { error } = await supabase.from('exercise_logs').upsert(entry, { onConflict: 'user_id,task_date,exercise_name' });
     if (error) throw error;
