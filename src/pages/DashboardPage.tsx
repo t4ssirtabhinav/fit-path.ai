@@ -752,7 +752,7 @@ export function DashboardPage() {
 
                                           <button
                                             onClick={() => addSet(ex.name)}
-                                            className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 mt-2 transition-colors"
+                                            className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 mt-2 transition-colors"
                                           >
                                             <Plus className="w-3.5 h-3.5" />
                                             Add set

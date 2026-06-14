@@ -12,9 +12,9 @@ const NAV_ITEMS = [
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-900 flex">
       {/* Sidebar — desktop */}
-      <aside className="hidden lg:flex flex-col w-56 border-r border-gray-800 bg-gray-950 fixed inset-y-0 left-0 z-30">
+      <aside className="hidden lg:flex flex-col w-56 border-r border-gray-800 bg-gray-900 fixed inset-y-0 left-0 z-30">
         <div className="flex items-center gap-2.5 px-5 py-5 border-b border-gray-800">
           <div className="w-8 h-8 bg-emerald-500/10 rounded-xl flex items-center justify-center">
             <Logo className="w-4 h-4 text-emerald-400" />
@@ -51,7 +51,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Bottom nav — mobile */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-gray-950 border-t border-gray-800 z-30">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-gray-900 border-t border-gray-800 z-30">
         <div className="flex items-center justify-around px-2 py-2 safe-area-bottom">
           {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
             <NavLink
