@@ -1,10 +1,40 @@
 import { parsePlanData } from '../lib/planSchema';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
+import { today } from '../lib/utils';
+import type { DailyTask } from '../types';
 import type { Database } from '../types/database';
 
 type DailyTaskInsert = Database['public']['Tables']['daily_tasks']['Insert'];
 
+const TRACKER_TASKS: Record<string, { category: DailyTask['category']; title: string; description: string; unit?: string }> = {
+  workouts: { category: 'workout', title: 'Log your workout', description: "Record the exercises, sets, reps, and weights from today's session." },
+  steps: { category: 'habit', title: 'Log steps & distance', description: 'Track how much you moved today.', unit: 'steps' },
+  meals: { category: 'meal', title: 'Log your meals', description: 'Note what you ate today using the Log notes button.' },
+  macros: { category: 'meal', title: 'Log your macros', description: 'Track protein, carbs, fat, and calories.' },
+  supplements: { category: 'supplement', title: 'Log supplements', description: 'Check off the supplements you took today.' },
+  measurements: { category: 'habit', title: 'Log body measurements', description: 'Use the Log weight button to record weight, waist, and other measurements.', unit: 'measurement' },
+  vitals: { category: 'habit', title: 'Log vitals', description: 'Record blood pressure, heart rate, or blood sugar via Log notes.' },
+  sleep: { category: 'sleep', title: 'Log sleep', description: 'Note your bedtime, wake time, and sleep quality.' },
+  water: { category: 'habit', title: 'Log water intake', description: 'Track how much water you drank today.', unit: 'glasses' },
+  mood: { category: 'habit', title: 'Log mood & energy', description: 'Rate your energy level using the Log notes button.', unit: 'rating' },
+};
+
 export const DashboardService = {
+  async seedTrackingTasks(userId: string, selectedTrackers: string[], timezone: string): Promise<void> {
+    const todayStr = today(timezone);
+    if (await DailyTaskRepository.hasTasksForDate(userId, todayStr)) return;
+
+    const tasks: DailyTaskInsert[] = selectedTrackers
+      .map((id, idx): DailyTaskInsert | null => {
+        const cfg = TRACKER_TASKS[id];
+        if (!cfg) return null;
+        return { user_id: userId, task_date: todayStr, ...cfg, order_index: idx, is_rest_day: false };
+      })
+      .filter((t): t is DailyTaskInsert => t !== null);
+
+    await DailyTaskRepository.seedTasks(tasks);
+  },
+
   async seedTasksFromPlan(userId: string, planId: string, rawPlanData: unknown, timezone: string): Promise<void> {
     const planData = parsePlanData(rawPlanData);
     if (!planData) return;
@@ -18,13 +48,13 @@ export const DashboardService = {
     const tasks: DailyTaskInsert[] = [];
     let idx = 0;
 
-    const scheduleMap = planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }> | undefined;
+    const scheduleMap = planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string; intensity_guidance?: string }> } }> | undefined;
     const schedule = scheduleMap?.[dayName];
     if (schedule) {
       if (schedule.is_rest_day) {
         tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'habit', title: 'Rest & Recovery Day', description: 'Light walk, stretching, or yoga. Let your muscles recover.', order_index: idx++, is_rest_day: true });
       } else if (schedule.workout) {
-        tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'workout', title: schedule.workout.name, description: schedule.workout.exercises.map((e) => `${e.name}: ${e.sets}x${e.reps}`).join(' • '), order_index: idx++, is_rest_day: false });
+        tasks.push({ user_id: userId, plan_id: planId, task_date: todayStr, category: 'workout', title: schedule.workout.name, description: schedule.workout.exercises.map((e) => `${e.name}: ${e.sets}x${e.reps}${e.intensity_guidance ? ` — ${e.intensity_guidance}` : ''}`).join(' • '), order_index: idx++, is_rest_day: false });
       }
     } else if (scheduleMap) {
       // Fallback: if the day is missing from schedule, treat as rest day

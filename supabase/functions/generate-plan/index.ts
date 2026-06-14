@@ -1,7 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
+import * as Sentry from "npm:@sentry/deno";
 import { getPromptInfo } from "../../../src/config/modalities/shared.ts";
+
+// No-op if SENTRY_DSN isn't configured — Sentry's SDK methods become safe
+// no-ops when uninitialized.
+const sentryDsn = Deno.env.get("SENTRY_DSN");
+if (sentryDsn) {
+  Sentry.init({ dsn: sentryDsn, tracesSampleRate: 0.1 });
+}
 
 const DEV_ORIGINS = [
   "http://localhost:5173",
@@ -40,17 +48,19 @@ function sanitizeUserInput(input: string, maxLen: number): string {
 
 // Zod schemas for validating AI response
 const ExerciseSchema = z.object({
-  name: z.string(),
+  name: z.string().min(1),
   sets: z.coerce.number(),
   reps: z.string(),
   rest_seconds: z.coerce.number(),
-  notes: z.string().optional(),
+  intensity_guidance: z.string().min(1),
+  progression_notes: z.string().min(1),
+  exercise_type: z.enum(["reps_weight", "duration"]).optional(),
 });
 
 const WorkoutSchema = z.object({
   name: z.string(),
   duration_minutes: z.coerce.number(),
-  exercises: z.array(ExerciseSchema).min(1),
+  exercises: z.array(ExerciseSchema).min(3),
   notes: z.string().optional(),
 });
 
@@ -159,11 +169,49 @@ function buildNutritionRules(country: string, dietType: string, foodPrefs: strin
   return `Nutrition guidance must use ingredients and dishes that are realistically available and culturally familiar in ${country}. Build meals around locally accessible staples for that region — do not default to a different country's cuisine. Respect the user's diet type (${dietType}), cuisine preferences (${foodPrefs}) and dislikes (${foodDislikes}).${allergyLine}`;
 }
 
+// Health concerns that warrant a healthcare-provider consultation note and more
+// conservative plan intensity, per docs/architecture/03-system-audit-2026-06.md §5.1.
+const MAJOR_MEDICAL_CONCERNS = new Set([
+  "PCOS / hormonal imbalance",
+  "Thyroid",
+  "Diabetes risk / blood sugar",
+  "High blood pressure",
+  "High cholesterol",
+]);
+
+// Determines whether the plan must carry an explicit "consult your healthcare
+// provider" note (and lean conservative on intensity) based on flagged
+// medical concerns, on-medication status, or injuries needing physio attention.
+function getMedicalFlags(hp: Record<string, unknown>, physioAreas: string[]): string[] {
+  const flags: string[] = [];
+  const concernsDetails = ((hp.onboarding_details as Record<string, Record<string, unknown>> | undefined)?.concerns) ?? {};
+  const concernItems = Array.isArray(concernsDetails.items) ? (concernsDetails.items as string[]) : [];
+
+  const flaggedConcerns = concernItems.filter((c) => MAJOR_MEDICAL_CONCERNS.has(c));
+  if (flaggedConcerns.length > 0) flags.push(...flaggedConcerns);
+
+  if (concernsDetails.on_medication === "yes_some") flags.push("currently on medication");
+  if (physioAreas.length > 0) flags.push(`injury/pain requiring physio attention (${physioAreas.join(", ")})`);
+
+  return flags;
+}
+
+// Per-modality guidance on what "exercises" should represent and where to put
+// intensity/pacing detail — keeps the unified Exercise schema meaningful across
+// strength, bodyweight, rehab, yoga and cardio sessions.
+const WORKOUT_STRUCTURE_GUIDANCE: Record<string, string> = {
+  gym: `For gym/strength sessions, every "exercises" entry must be a single named movement a person can perform and log directly (e.g. "Barbell Back Squat", "Incline Dumbbell Press", "Lat Pulldown", "Dumbbell Bicep Curl"). NEVER use generic category labels as exercise names — "Compound Movement", "Isolation Exercise", "Accessory Lift", "Cardio Finisher", etc. are forbidden; name the actual lift instead. Each entry needs concrete sets/reps and an "intensity_guidance" giving a weight range, %1RM, or RPE target appropriate to the user's experience level. Set "exercise_type" to "reps_weight".`,
+  home: `For home workout sessions, every "exercises" entry must be a single named movement a person can perform and log directly (e.g. "Push-ups", "Resistance Band Rows", "Bodyweight Lunges", "Dumbbell Shoulder Press"). NEVER use generic category labels as exercise names — "Compound Movement", "Isolation Exercise", "Upper Body Block", etc. are forbidden; name the actual movement instead. Each entry needs concrete sets/reps and an "intensity_guidance" describing tempo, variation, or resistance level to use. Set "exercise_type" to "reps_weight".`,
+  physio: `For physiotherapy/rehab sessions, every "exercises" entry must be a single named rehab exercise targeting the flagged areas (e.g. "Glute Bridge", "Wall Slides", "Banded Lateral Walk") — never a generic category label like "Mobility Drill" or "Strengthening Exercise". Each entry needs concrete sets/reps and an "intensity_guidance" describing pain-monitoring guidance (e.g. "stop if pain exceeds 3/10"). Set "exercise_type" to "reps_weight".`,
+  yoga: `For yoga sessions, list specific poses/sequences (e.g. "Downward Dog", "Warrior II") as "exercises" — put the hold duration in "reps" (e.g. "30-45 sec hold") and put alignment/breathing cues in "intensity_guidance". Set "exercise_type" to "duration".`,
+  cardio: `For cardio sessions, list specific activities/intervals (e.g. "Brisk walk", "Incline treadmill interval") as "exercises" — put the duration in "reps" (e.g. "20 min") and put pace/heart-rate-zone guidance in "intensity_guidance". Set "exercise_type" to "duration".`,
+};
+
 function buildSupplementGuidance(): string {
   return `When suggesting supplements, recommend categories and what to look for — NOT specific commercial brands or products. Stay unbiased and do not endorse any brand or manufacturer. For each item, explain why it fits this person's goals, lifestyle and budget, and describe what to check for when buying locally (e.g. third-party testing, label transparency, typical price range in their region) instead of naming a brand.`;
 }
 
-function buildPrompt(hp: Record<string, unknown>): string {
+function buildPrompt(hp: Record<string, unknown>): { prompt: string; requiresMedicalDisclaimer: boolean } {
   const modalities = (Array.isArray(hp.activity_modalities) ? hp.activity_modalities : []) as string[];
   const details = (hp.onboarding_details ?? {}) as Record<string, Record<string, unknown>>;
 
@@ -199,9 +247,11 @@ function buildPrompt(hp: Record<string, unknown>): string {
   const addOnAreas: string[] = [];
 
   if (hasWorkout) {
-    const selectedWorkoutModalities = modalities.filter((m) => getPromptInfo(m)?.isWorkoutModality ?? false).map((m) => getPromptInfo(m)?.label ?? m);
-    sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}) at roughly ${commitmentDays} active sessions/week. If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Mark non-active days as rest days.`);
-    schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number }] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
+    const selectedWorkoutModalityIds = modalities.filter((m) => getPromptInfo(m)?.isWorkoutModality ?? false);
+    const selectedWorkoutModalities = selectedWorkoutModalityIds.map((m) => getPromptInfo(m)?.label ?? m);
+    const structureGuidance = selectedWorkoutModalityIds.map((m) => WORKOUT_STRUCTURE_GUIDANCE[m]).filter(Boolean).join(" ");
+    sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}) at roughly ${commitmentDays} active sessions/week. If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Mark non-active days as rest days. Every active workout day must list at least 3 concrete, specifically-named exercises/poses/activities — never a single vague placeholder like "Upper Body Workout" as an exercise (that belongs in the workout's "name" field, not its exercise list). For every exercise, "intensity_guidance" must give concrete, actionable guidance calibrated to this person's stated experience/fitness level, and "progression_notes" must describe how to advance that exercise across this plan's duration. ${structureGuidance}`);
+    schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number, "intensity_guidance": "string", "progression_notes": "string", "exercise_type": "reps_weight"|"duration" }, ... at least 3 exercises ...] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
   } else {
     addOnAreas.push("structured workouts");
   }
@@ -232,7 +282,12 @@ function buildPrompt(hp: Record<string, unknown>): string {
     ? `The user did NOT select ${addOnAreas.join(", ")} as part of their regime. Do not generate full plan/tracking content for these areas — instead add a "suggested_addons" array with a 1-2 sentence note per area on why adding it could help them reach their goal (so they can opt in later). Schema: "suggested_addons": [{ "area": "string", "reason": "string" }]`
     : `The user opted into every major plan area — omit "suggested_addons" entirely.`;
 
-  return `You are an expert fitness coach and dietician creating a personalised plan for someone in ${country}.
+  const medicalFlags = getMedicalFlags(hp, physioAreas);
+  const medicalSafetyInstruction = medicalFlags.length > 0
+    ? `\nMEDICAL SAFETY (required): This person has flagged the following: ${medicalFlags.join("; ")}. You MUST include a clear, specific sentence in "personalized_notes" recommending they consult their doctor or a qualified healthcare provider before starting this plan, given these factors. Bias workout intensity, exercise selection and nutrition guidance conservatively where it touches these areas.`
+    : "";
+
+  const prompt = `You are an expert fitness coach and dietician creating a personalised plan for someone in ${country}.
 
 USER PROFILE
 Age: ${hp.age ?? "unknown"} | Gender: ${hp.gender ?? "unspecified"}
@@ -265,14 +320,17 @@ PLAN SECTIONS TO GENERATE
 ${sections.join("\n")}
 
 ${addOnInstruction}
+${medicalSafetyInstruction}
 
 IMPORTANT: Return ONLY a raw JSON object matching this shape — no markdown, no code fences, no explanation text. Start with { and end with }.
 {
   "phase": number, "phase_name": "string", "phase_description": "2-3 sentences",
-  "duration_months": number, "personalized_notes": "3-4 sentences of specific advice tailored to this person",
+  "duration_months": number, "personalized_notes": "3-4 sentences of specific advice tailored to this person${medicalFlags.length ? ", including the required healthcare-consultation note" : ""}",
   "calorie_target": number, "protein_target_g": number,
   ${schemaFields.join(",\n  ")}${addOnAreas.length ? ",\n  \"suggested_addons\": [{ \"area\": \"string\", \"reason\": \"string\" }]" : ""}
 }`;
+
+  return { prompt, requiresMedicalDisclaimer: medicalFlags.length > 0 };
 }
 
 Deno.serve(async (req: Request) => {
@@ -353,7 +411,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const hpForPrompt = { ...hp, country: profile?.country };
-    const prompt = buildPrompt(hpForPrompt);
+    const { prompt, requiresMedicalDisclaimer } = buildPrompt(hpForPrompt);
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiApiKey) {
@@ -454,8 +512,20 @@ Deno.serve(async (req: Request) => {
         throw new Error("AI returned an invalid plan. Please try again.");
       }
       planData = validationResult.data;
+
+      // Enforce the medical-safety guardrail: if the prompt required a
+      // healthcare-consultation note, make sure the model actually included one.
+      if (requiresMedicalDisclaimer) {
+        const notes = (planData.personalized_notes as string).toLowerCase();
+        if (!/(consult|doctor|physician|healthcare|health care|medical professional)/.test(notes)) {
+          console.error("Missing required medical-safety note in personalized_notes");
+          throw new Error("AI returned an invalid plan. Please try again.");
+        }
+      }
     } catch (aiErr) {
       console.error("Gemini AI error:", aiErr);
+      Sentry.captureException(aiErr);
+      await Sentry.flush(2000);
       const msg = aiErr instanceof Error ? aiErr.message : "AI generation failed. Please try again.";
       return new Response(JSON.stringify({ error: msg }), {
         status: 502, headers: { ...ch, "Content-Type": "application/json" },
@@ -496,6 +566,8 @@ Deno.serve(async (req: Request) => {
     });
   } catch (e: unknown) {
     console.error("generate-plan error:", e);
+    Sentry.captureException(e);
+    await Sentry.flush(2000);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Internal server error" }), {
       status: 500, headers: { ...ch, "Content-Type": "application/json" },
     });
@@ -527,7 +599,7 @@ async function seedTodaysTasks(
   }> = [];
   let orderIdx = 0;
 
-  const schedule = (planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string }> } }> | undefined)?.[dayName];
+  const schedule = (planData.weekly_schedule as Record<string, { is_rest_day: boolean; workout?: { name: string; exercises: Array<{ name: string; sets: number; reps: string; intensity_guidance?: string }> } }> | undefined)?.[dayName];
 
   if (schedule) {
     if (schedule.is_rest_day) {
@@ -541,7 +613,7 @@ async function seedTodaysTasks(
       tasks.push({
         user_id: userId, plan_id: planId, task_date: today,
         category: "workout", title: schedule.workout.name,
-        description: schedule.workout.exercises.map((e: { name: string; sets: number; reps: string }) => `${e.name}: ${e.sets}x${e.reps}`).join(" • "),
+        description: schedule.workout.exercises.map((e: { name: string; sets: number; reps: string; intensity_guidance?: string }) => `${e.name}: ${e.sets}x${e.reps}${e.intensity_guidance ? ` — ${e.intensity_guidance}` : ''}`).join(" • "),
         order_index: orderIdx++, is_rest_day: false,
       });
     }

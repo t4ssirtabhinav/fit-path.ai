@@ -13,7 +13,9 @@ export interface Database {
           country: string | null;
           invite_code: string | null;
           timezone: string;
+          phone_number: string | null;
           last_onboarded_at: string | null;
+          last_active_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -26,7 +28,9 @@ export interface Database {
           country?: string | null;
           invite_code?: string | null;
           timezone?: string;
+          phone_number?: string | null;
           last_onboarded_at?: string | null;
+          last_active_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -39,7 +43,9 @@ export interface Database {
           country?: string | null;
           invite_code?: string | null;
           timezone?: string;
+          phone_number?: string | null;
           last_onboarded_at?: string | null;
+          last_active_at?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -207,6 +213,32 @@ export interface Database {
           notes?: string | null;
         };
         Update: Partial<Database['public']['Tables']['task_logs']['Insert']>;
+        Relationships: [];
+      };
+      exercise_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          task_date: string;
+          exercise_name: string;
+          sets: Json;
+          duration_minutes: number | null;
+          notes: string | null;
+          source: 'plan' | 'custom';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          task_date: string;
+          exercise_name: string;
+          sets?: Json;
+          duration_minutes?: number | null;
+          notes?: string | null;
+          source?: 'plan' | 'custom';
+        };
+        Update: Partial<Database['public']['Tables']['exercise_logs']['Insert']>;
         Relationships: [];
       };
       body_measurements: {

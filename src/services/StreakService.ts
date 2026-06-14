@@ -1,4 +1,5 @@
 import { StreakRepository } from '../repositories/StreakRepository';
+import { yesterday } from '../lib/utils';
 import type { Streak } from '../types';
 
 export const StreakService = {
@@ -8,9 +9,7 @@ export const StreakService = {
     const current = await StreakRepository.getForUser(userId);
     if (!current) return null;
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yest = yesterday.toLocaleDateString('en-CA', { timeZone: tz });
+    const yest = yesterday(tz);
 
     let newStreak = current.current_streak;
     if (completedAny && current.last_active_date !== todayDate) {

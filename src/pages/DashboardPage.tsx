@@ -1,10 +1,10 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   Flame, Dumbbell, Salad, Pill, CheckCircle2, Circle, Coffee,
-  Moon, Zap, ChevronRight, RefreshCw, BedDouble, Target, TrendingUp,
-  Info, X, MessageSquare
+  Moon, Zap, ChevronRight, ChevronDown, ChevronUp, RefreshCw, BedDouble, Target, TrendingUp,
+  Info, X, MessageSquare, Plus, Minus
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { PlanRepository } from '../repositories/PlanRepository';
@@ -12,14 +12,18 @@ import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { StreakRepository } from '../repositories/StreakRepository';
 import { BodyMeasurementRepository } from '../repositories/BodyMeasurementRepository';
 import { DailyLogRepository } from '../repositories/DailyLogRepository';
+import { ExerciseLogRepository } from '../repositories/ExerciseLogRepository';
+import { TrackingConfigRepository } from '../repositories/TrackingConfigRepository';
 import { BuddyRepository } from '../repositories/BuddyRepository';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { StreakService } from '../services/StreakService';
 import { DashboardService } from '../services/DashboardService';
-import { today, DEFAULT_TIMEZONE } from '../lib/utils';
+import { today, DEFAULT_TIMEZONE, getTodaysExercises, parseLeadingInt, getExerciseType, getTaskInputType } from '../lib/utils';
+import { usePlan } from '../hooks/usePlan';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
-import type { DailyTask, TaskLog, Streak, DailyLog } from '../types';
+import type { DailyTask, TaskLog, Streak, DailyLog, ExerciseLog, ExerciseSet } from '../types';
+import type { Json } from '../types/database';
 
 type TaskWithLog = DailyTask & { log?: TaskLog };
 
@@ -87,6 +91,17 @@ export function DashboardPage() {
   // Info popup for task descriptions
   const [infoTask, setInfoTask] = useState<TaskWithLog | null>(null);
 
+  // Per-task inline logging
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
+  const [taskDrafts, setTaskDrafts] = useState<Record<string, { value: string; notes: string }>>({});
+
+  // Exercise set logging
+  const { planData } = usePlan(user?.id);
+  const [exerciseLogs, setExerciseLogs] = useState<ExerciseLog[]>([]);
+  const [exerciseSets, setExerciseSets] = useState<Record<string, ExerciseSet[]>>({});
+  const [exerciseDuration, setExerciseDuration] = useState<Record<string, { minutes: number; notes: string }>>({});
+
   const [todayDate, setTodayDate] = useState(() => today(tz));
   const dateLabel = format(new Date(), 'EEEE, MMMM d');
 
@@ -105,26 +120,36 @@ export function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
 
-    const [tasksData, logsData, streakData] = await Promise.all([
+    const [tasksData, logsData, streakData, exerciseLogsData] = await Promise.all([
       DailyTaskRepository.getForDate(user.id, todayDate),
       DailyTaskRepository.getLogsForDate(user.id, todayDate),
       StreakRepository.getForUser(user.id),
+      ExerciseLogRepository.getForDate(user.id, todayDate),
     ]);
+    setExerciseLogs(exerciseLogsData);
 
     const logMap = new Map(logsData.map(l => [l.task_id, l]));
     const enriched = tasksData.map(t => ({ ...t, log: logMap.get(t.id) }));
     setTasks(enriched);
     setStreak(streakData);
 
-    // If no tasks today, try to seed from active plan
+    // If no tasks today, try to seed from active plan (or tracking config for track-only users)
     if (enriched.length === 0) {
-      const plan = await PlanRepository.getActivePlan(user.id);
-      if (plan) {
-        await DashboardService.seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
-        const newTasks = await DailyTaskRepository.getForDate(user.id, todayDate);
-        setTasks(newTasks.map(t => ({ ...t, log: undefined })));
+      if (profile?.onboarding_path === 'track') {
+        const trackingConfig = await TrackingConfigRepository.getForUser(user.id);
+        if (trackingConfig && trackingConfig.selected_trackers.length > 0) {
+          await DashboardService.seedTrackingTasks(user.id, trackingConfig.selected_trackers, tz);
+          const newTasks = await DailyTaskRepository.getForDate(user.id, todayDate);
+          setTasks(newTasks.map(t => ({ ...t, log: undefined })));
+        }
+      } else {
+        const plan = await PlanRepository.getActivePlan(user.id);
+        if (plan) {
+          await DashboardService.seedTasksFromPlan(user.id, plan.id, plan.plan_data, tz);
+          const newTasks = await DailyTaskRepository.getForDate(user.id, todayDate);
+          setTasks(newTasks.map(t => ({ ...t, log: undefined })));
+        }
       }
     }
 
@@ -156,9 +181,124 @@ export function DashboardPage() {
     if (existingLog) setDailyLog(existingLog);
 
     setLoading(false);
-  }, [user, todayDate]);
+  }, [user?.id, todayDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    setTaskDrafts(prev => {
+      const next = { ...prev };
+      for (const task of tasks) {
+        if (next[task.id]) continue;
+        next[task.id] = {
+          value: task.log?.value_logged != null ? String(task.log.value_logged) : '',
+          notes: task.log?.notes ?? '',
+        };
+      }
+      return next;
+    });
+  }, [tasks]);
+
+  const todaysExercises = getTodaysExercises(planData, tz);
+
+  useEffect(() => {
+    if (todaysExercises.length === 0) return;
+    setExerciseSets(prev => {
+      const next: Record<string, ExerciseSet[]> = {};
+      for (const ex of todaysExercises) {
+        if (getExerciseType(ex) !== 'reps_weight') continue;
+        const existingLog = exerciseLogs.find(l => l.exercise_name === ex.name);
+        if (existingLog) {
+          next[ex.name] = existingLog.sets as unknown as ExerciseSet[];
+        } else if (prev[ex.name]) {
+          next[ex.name] = prev[ex.name];
+        } else {
+          next[ex.name] = Array.from({ length: ex.sets }, () => ({ reps: parseLeadingInt(ex.reps), weight: 0 }));
+        }
+      }
+      return next;
+    });
+    setExerciseDuration(prev => {
+      const next: Record<string, { minutes: number; notes: string }> = {};
+      for (const ex of todaysExercises) {
+        if (getExerciseType(ex) !== 'duration') continue;
+        const existingLog = exerciseLogs.find(l => l.exercise_name === ex.name);
+        if (existingLog) {
+          next[ex.name] = { minutes: existingLog.duration_minutes ?? 0, notes: existingLog.notes ?? '' };
+        } else if (prev[ex.name]) {
+          next[ex.name] = prev[ex.name];
+        } else {
+          next[ex.name] = { minutes: 0, notes: '' };
+        }
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseLogs, planData]);
+
+  async function persistExerciseSets(exerciseName: string, sets: ExerciseSet[]) {
+    if (!user) return;
+    await ExerciseLogRepository.upsert({
+      user_id: user.id,
+      task_date: todayDate,
+      exercise_name: exerciseName,
+      sets: sets as unknown as Json,
+      source: 'plan',
+    });
+  }
+
+  function addSet(exerciseName: string) {
+    setExerciseSets(prev => {
+      const current = prev[exerciseName] ?? [];
+      const last = current[current.length - 1];
+      const updated = [...current, last ? { ...last } : { reps: 0, weight: 0 }];
+      void persistExerciseSets(exerciseName, updated);
+      return { ...prev, [exerciseName]: updated };
+    });
+  }
+
+  function removeSet(exerciseName: string, index: number) {
+    setExerciseSets(prev => {
+      const updated = (prev[exerciseName] ?? []).filter((_, i) => i !== index);
+      void persistExerciseSets(exerciseName, updated);
+      return { ...prev, [exerciseName]: updated };
+    });
+  }
+
+  function updateSet(exerciseName: string, index: number, field: keyof ExerciseSet, value: number) {
+    setExerciseSets(prev => ({
+      ...prev,
+      [exerciseName]: (prev[exerciseName] ?? []).map((s, i) => i === index ? { ...s, [field]: value } : s),
+    }));
+  }
+
+  function handleSetBlur(exerciseName: string) {
+    void persistExerciseSets(exerciseName, exerciseSets[exerciseName] ?? []);
+  }
+
+  async function persistExerciseDuration(exerciseName: string, duration: { minutes: number; notes: string }) {
+    if (!user) return;
+    await ExerciseLogRepository.upsert({
+      user_id: user.id,
+      task_date: todayDate,
+      exercise_name: exerciseName,
+      sets: [] as unknown as Json,
+      duration_minutes: duration.minutes,
+      notes: duration.notes || null,
+      source: 'plan',
+    });
+  }
+
+  function updateExerciseDuration(exerciseName: string, field: 'minutes' | 'notes', value: number | string) {
+    setExerciseDuration(prev => ({
+      ...prev,
+      [exerciseName]: { ...(prev[exerciseName] ?? { minutes: 0, notes: '' }), [field]: value },
+    }));
+  }
+
+  function handleDurationBlur(exerciseName: string) {
+    void persistExerciseDuration(exerciseName, exerciseDuration[exerciseName] ?? { minutes: 0, notes: '' });
+  }
 
   async function toggleTask(task: TaskWithLog) {
     if (!user || togglingId) return;
@@ -182,6 +322,48 @@ export function DashboardPage() {
     const updated = await StreakService.recordCompletion(user.id, nowCompleted, todayDate, tz);
     if (updated) setStreak(updated);
     setTogglingId(null);
+  }
+
+  async function saveTaskLog(task: TaskWithLog, fields: { value_logged?: number | null; notes?: string | null }) {
+    if (!user) return;
+    const completedAt = new Date().toISOString();
+
+    await DailyTaskRepository.upsertLog({
+      user_id: user.id,
+      task_id: task.id,
+      log_date: todayDate,
+      completed: true,
+      completed_at: completedAt,
+      ...fields,
+    });
+
+    setTasks(prev => prev.map(t =>
+      t.id === task.id
+        ? { ...t, log: { ...(t.log as TaskLog), ...fields, completed: true, completed_at: completedAt } as TaskLog }
+        : t
+    ));
+
+    const updated = await StreakService.recordCompletion(user.id, true, todayDate, tz);
+    if (updated) setStreak(updated);
+  }
+
+  function updateTaskDraft(taskId: string, field: 'value' | 'notes', value: string) {
+    setTaskDrafts(prev => ({
+      ...prev,
+      [taskId]: { ...(prev[taskId] ?? { value: '', notes: '' }), [field]: value },
+    }));
+  }
+
+  function handleTaskNumericBlur(task: TaskWithLog) {
+    const raw = taskDrafts[task.id]?.value ?? '';
+    if (raw === '') return;
+    void saveTaskLog(task, { value_logged: Number(raw) });
+  }
+
+  function handleTaskNotesBlur(task: TaskWithLog) {
+    const notes = taskDrafts[task.id]?.notes ?? '';
+    if (!notes) return;
+    void saveTaskLog(task, { notes });
   }
 
   async function logRestDay() {
@@ -396,41 +578,220 @@ export function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="pt-0 space-y-2">
-              {catTasks.map(task => (
-                <button
-                  key={task.id}
-                  onClick={() => toggleTask(task)}
-                  disabled={togglingId === task.id}
-                  className={`w-full flex items-start gap-3 p-3 rounded-xl border transition-all duration-200 text-left ${
-                    task.log?.completed
-                      ? 'bg-emerald-500/5 border-emerald-500/20 opacity-75'
-                      : 'bg-gray-800/50 border-gray-700/50 hover:border-gray-600'
-                  }`}
-                >
-                  <div className="flex-shrink-0 mt-0.5">
-                    {task.log?.completed
-                      ? <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                      : <Circle className="w-5 h-5 text-gray-600" />
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium leading-snug ${task.log?.completed ? 'line-through text-gray-500' : 'text-white'}`}>
-                      {task.title}
-                    </p>
-                    {task.description && (
-                      <p className="text-xs text-gray-500 mt-0.5 leading-relaxed line-clamp-1">{task.description}</p>
+              {catTasks.map(task => {
+                const inputType = getTaskInputType(task);
+                const isExpanded = expandedTaskId === task.id;
+                const draft = taskDrafts[task.id] ?? { value: '', notes: '' };
+                const showExerciseLogger = inputType === 'exercise' && task.category === 'workout' && todaysExercises.length > 0;
+
+                return (
+                  <div
+                    key={task.id}
+                    className={`rounded-xl border transition-all duration-200 ${
+                      task.log?.completed
+                        ? 'bg-emerald-500/5 border-emerald-500/20'
+                        : 'bg-gray-800/50 border-gray-700/50 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="w-full flex items-start gap-3 p-3 text-left">
+                      <button
+                        onClick={() => toggleTask(task)}
+                        disabled={togglingId === task.id}
+                        className="flex-shrink-0 mt-0.5"
+                      >
+                        {task.log?.completed
+                          ? <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                          : <Circle className="w-5 h-5 text-gray-600" />
+                        }
+                      </button>
+                      <button onClick={() => toggleTask(task)} disabled={togglingId === task.id} className="flex-1 min-w-0 text-left">
+                        <p className={`text-sm font-medium leading-snug ${task.log?.completed ? 'line-through text-gray-500 opacity-75' : 'text-white'}`}>
+                          {task.title}
+                        </p>
+                        {task.description && (
+                          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed line-clamp-1">{task.description}</p>
+                        )}
+                      </button>
+                      {task.description && task.description.length > 50 && (
+                        <button
+                          onClick={() => setInfoTask(task)}
+                          className="flex-shrink-0 mt-0.5 text-gray-600 hover:text-gray-300 transition-colors"
+                        >
+                          <Info className="w-4 h-4" />
+                        </button>
+                      )}
+                      {inputType !== 'none' && (
+                        <button
+                          onClick={() => setExpandedTaskId(prev => prev === task.id ? null : task.id)}
+                          className="flex-shrink-0 mt-0.5 text-gray-600 hover:text-gray-300 transition-colors"
+                        >
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </button>
+                      )}
+                    </div>
+
+                    {isExpanded && (
+                      <div className="px-3 pb-3">
+                        {inputType === 'numeric' && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={draft.value}
+                              onChange={e => updateTaskDraft(task.id, 'value', e.target.value)}
+                              onBlur={() => handleTaskNumericBlur(task)}
+                              placeholder="0"
+                              className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                            <span className="text-xs text-gray-500">{task.unit}</span>
+                          </div>
+                        )}
+
+                        {inputType === 'rating' && (
+                          <div className="flex gap-2">
+                            {[1, 2, 3, 4, 5].map(v => (
+                              <button
+                                key={v}
+                                onClick={() => { updateTaskDraft(task.id, 'value', String(v)); void saveTaskLog(task, { value_logged: v }); }}
+                                className={`w-10 h-10 rounded-xl text-sm font-bold border transition-all ${
+                                  Number(draft.value) === v
+                                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                                    : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-600'
+                                }`}
+                              >
+                                {v}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {inputType === 'notes' && (
+                          <textarea
+                            value={draft.notes}
+                            onChange={e => updateTaskDraft(task.id, 'notes', e.target.value)}
+                            onBlur={() => handleTaskNotesBlur(task)}
+                            placeholder="Add a note..."
+                            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                          />
+                        )}
+
+                        {inputType === 'measurement' && (
+                          <button
+                            onClick={() => setShowMeasurementModal(true)}
+                            className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-400/10 hover:bg-emerald-400/20 px-3 py-1.5 rounded-xl transition-colors"
+                          >
+                            <Target className="w-3.5 h-3.5" />
+                            Log weight
+                          </button>
+                        )}
+
+                        {inputType === 'exercise' && !showExerciseLogger && (
+                          <textarea
+                            value={draft.notes}
+                            onChange={e => updateTaskDraft(task.id, 'notes', e.target.value)}
+                            onBlur={() => handleTaskNotesBlur(task)}
+                            placeholder="How did this workout go?"
+                            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[60px] resize-y"
+                          />
+                        )}
+
+                        {showExerciseLogger && (
+                          <div className="space-y-2">
+                            {todaysExercises.map(ex => {
+                              const exExpanded = expandedExercise === ex.name;
+                              return (
+                                <div key={ex.name} className="bg-gray-900/50 border border-gray-700/50 rounded-xl">
+                                  <button
+                                    onClick={() => setExpandedExercise(prev => prev === ex.name ? null : ex.name)}
+                                    className="w-full flex items-center justify-between gap-2 p-2.5 text-left"
+                                  >
+                                    <div>
+                                      <p className="text-sm font-medium text-white">{ex.name}</p>
+                                      <p className="text-xs text-gray-500 mt-0.5">
+                                        Target: {ex.sets} x {ex.reps}
+                                        {ex.intensity_guidance ? ` — ${ex.intensity_guidance}` : ''}
+                                      </p>
+                                    </div>
+                                    {exExpanded ? <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />}
+                                  </button>
+
+                                  {exExpanded && (
+                                    <div className="px-2.5 pb-2.5">
+                                      {getExerciseType(ex) === 'reps_weight' ? (
+                                        <>
+                                          <div className="space-y-1.5">
+                                            {(exerciseSets[ex.name] ?? []).map((set, i) => (
+                                              <div key={i} className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500 w-10">Set {i + 1}</span>
+                                                <input
+                                                  type="number"
+                                                  value={set.reps}
+                                                  onChange={e => updateSet(ex.name, i, 'reps', Number(e.target.value))}
+                                                  onBlur={() => handleSetBlur(ex.name)}
+                                                  placeholder="Reps"
+                                                  className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                />
+                                                <span className="text-xs text-gray-500">reps ×</span>
+                                                <input
+                                                  type="number"
+                                                  value={set.weight}
+                                                  onChange={e => updateSet(ex.name, i, 'weight', Number(e.target.value))}
+                                                  onBlur={() => handleSetBlur(ex.name)}
+                                                  placeholder="Weight"
+                                                  className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                />
+                                                <span className="text-xs text-gray-500">kg</span>
+                                                <button
+                                                  onClick={() => removeSet(ex.name, i)}
+                                                  className="ml-auto text-gray-600 hover:text-red-400 transition-colors"
+                                                >
+                                                  <Minus className="w-4 h-4" />
+                                                </button>
+                                              </div>
+                                            ))}
+                                          </div>
+
+                                          <button
+                                            onClick={() => addSet(ex.name)}
+                                            className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 mt-2 transition-colors"
+                                          >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            Add set
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <div className="space-y-2">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-500">Duration completed</span>
+                                            <input
+                                              type="number"
+                                              value={exerciseDuration[ex.name]?.minutes ?? 0}
+                                              onChange={e => updateExerciseDuration(ex.name, 'minutes', Number(e.target.value))}
+                                              onBlur={() => handleDurationBlur(ex.name)}
+                                              className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                            />
+                                            <span className="text-xs text-gray-500">min</span>
+                                          </div>
+                                          <textarea
+                                            value={exerciseDuration[ex.name]?.notes ?? ''}
+                                            onChange={e => updateExerciseDuration(ex.name, 'notes', e.target.value)}
+                                            onBlur={() => handleDurationBlur(ex.name)}
+                                            placeholder="Notes (optional) — how it felt, any details worth remembering"
+                                            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[40px] resize-y"
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {task.description && task.description.length > 50 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setInfoTask(task); }}
-                      className="flex-shrink-0 mt-0.5 text-gray-600 hover:text-gray-300 transition-colors"
-                    >
-                      <Info className="w-4 h-4" />
-                    </button>
-                  )}
-                </button>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         ))

@@ -31,10 +31,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function fetchProfile(userId: string) {
     const data = await ProfileRepository.getForUser(userId);
     setProfile(data);
+    return data;
   }
 
   async function refreshProfile() {
     if (user) await fetchProfile(user.id);
+  }
+
+  const LAST_ACTIVE_THROTTLE_MS = 15 * 60 * 1000;
+
+  async function touchLastActive(userId: string, currentProfile: Profile | null) {
+    const last = currentProfile?.last_active_at ? new Date(currentProfile.last_active_at).getTime() : 0;
+    if (Date.now() - last < LAST_ACTIVE_THROTTLE_MS) return;
+    const now = new Date().toISOString();
+    await ProfileRepository.update(userId, { last_active_at: now });
+    setProfile(prev => (prev ? { ...prev, last_active_at: now } : prev));
   }
 
   useEffect(() => {
@@ -42,7 +53,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id).finally(() => setLoading(false));
+        fetchProfile(session.user.id)
+          .then(data => touchLastActive(session.user.id, data))
+          .finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
@@ -53,7 +66,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null);
       if (session?.user) {
         (async () => {
-          await fetchProfile(session.user.id);
+          const data = await fetchProfile(session.user.id);
+          await touchLastActive(session.user.id, data);
           setLoading(false);
         })();
       } else {

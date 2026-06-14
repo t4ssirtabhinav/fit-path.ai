@@ -5,6 +5,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { GeneratePlanPage } from './pages/GeneratePlanPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -40,6 +42,8 @@ function AppRoutes() {
       {/* Public */}
       <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
       <Route path="/register" element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage />} />
+      <Route path="/forgot-password" element={user ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/join/:code" element={<JoinBuddyPage />} />
 
       {/* Onboarding — always accessible when authenticated (plan generation sets onboarding_complete) */}
