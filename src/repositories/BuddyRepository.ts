@@ -34,15 +34,6 @@ export const BuddyRepository = {
     if (error) throw error;
   },
 
-  async declineAllActiveFor(userId: string): Promise<void> {
-    const { error } = await supabase
-      .from('buddies')
-      .update({ status: 'declined' })
-      .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
-      .eq('status', 'active');
-    if (error) throw error;
-  },
-
   async lookupByInviteCode(code: string): Promise<{ id: string; display_name: string }[] | null> {
     const { data, error } = await supabase.rpc('lookup_profile_by_invite_code', { code });
     if (error) return null;

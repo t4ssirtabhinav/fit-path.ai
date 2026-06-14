@@ -38,6 +38,8 @@ function HeatmapCalendar({
   todayDate?: string;
   legend: { color: string; label: string }[];
 }) {
+  if (days.length === 0) return null;
+
   return (
     <>
       <div className="grid grid-cols-7 gap-1">

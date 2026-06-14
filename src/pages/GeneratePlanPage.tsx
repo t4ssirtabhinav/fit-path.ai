@@ -39,6 +39,11 @@ export function GeneratePlanPage() {
 
     async function generate() {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        clearInterval(interval);
+        setError('Your session has expired. Please sign in again.');
+        return;
+      }
       let res: Response;
       try {
         res = await fetch(

@@ -24,7 +24,7 @@ export function JoinBuddyPage() {
         setError('This invite link is invalid or has expired.');
       } else {
         setTargetId(data[0].id);
-        setTargetName(data[0].display_name);
+        setTargetName(data[0].display_name ?? 'Your buddy');
       }
       setLoading(false);
     });

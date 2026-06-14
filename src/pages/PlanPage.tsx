@@ -162,7 +162,7 @@ export function PlanPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      {workout.exercises.map((ex, i) => (
+                      {(workout.exercises ?? []).map((ex, i) => (
                         <div key={i}>
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-gray-300">{ex.name}</span>
@@ -209,7 +209,7 @@ export function PlanPage() {
                   </div>
                 </div>
                 <ul className="space-y-0.5">
-                  {meal.items.map((item, i) => (
+                  {(meal.items ?? []).map((item, i) => (
                     <li key={i} className="text-xs text-gray-400 flex items-start gap-1.5">
                       <span className="text-emerald-500 mt-0.5">&#8226;</span>{item}
                     </li>
