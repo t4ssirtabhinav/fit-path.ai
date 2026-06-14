@@ -4,6 +4,7 @@ import { Dumbbell, Mail } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { LegalFooter } from '../components/layout/LegalFooter';
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -36,6 +37,9 @@ export function ForgotPasswordPage() {
           <Link to="/login" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors text-sm">
             Back to sign in
           </Link>
+          <div className="mt-8">
+            <LegalFooter />
+          </div>
         </div>
       </div>
     );
@@ -78,6 +82,10 @@ export function ForgotPasswordPage() {
               Back to sign in
             </Link>
           </p>
+        </div>
+
+        <div className="mt-6">
+          <LegalFooter />
         </div>
       </div>
     </div>
