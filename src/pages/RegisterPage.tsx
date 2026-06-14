@@ -4,7 +4,6 @@ import { Eye, EyeOff, Dumbbell, ShieldCheck, Mail } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { LegalFooter } from '../components/layout/LegalFooter';
 
 function EmailSentScreen({ email, onResend, resending }: {
   email: string;
@@ -213,10 +212,6 @@ export function RegisterPage() {
               Sign in
             </Link>
           </p>
-        </div>
-
-        <div className="mt-6">
-          <LegalFooter />
         </div>
       </div>
     </div>

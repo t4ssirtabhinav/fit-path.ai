@@ -7,10 +7,6 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
-import { AboutPage } from './pages/AboutPage';
-import { ContactPage } from './pages/ContactPage';
-import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
-import { TermsPage } from './pages/TermsPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { GeneratePlanPage } from './pages/GeneratePlanPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -49,12 +45,6 @@ function AppRoutes() {
       <Route path="/forgot-password" element={user ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/join/:code" element={<JoinBuddyPage />} />
-
-      {/* Legal & info — accessible whether logged in or not */}
-      <Route path="/about" element={<AboutPage />} />
-      <Route path="/contact" element={<ContactPage />} />
-      <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-      <Route path="/terms" element={<TermsPage />} />
 
       {/* Onboarding — always accessible when authenticated (plan generation sets onboarding_complete) */}
       <Route path="/onboarding" element={

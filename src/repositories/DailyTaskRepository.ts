@@ -52,42 +52,6 @@ export const DailyTaskRepository = {
     return data ?? [];
   },
 
-  async getTaskLogsWithCategoryInRange(
-    userId: string,
-    startDate: string,
-    endDate: string,
-    categories?: DailyTask['category'][]
-  ): Promise<{ log_date: string; completed: boolean; category: DailyTask['category']; title: string }[]> {
-    let taskQuery = supabase
-      .from('daily_tasks')
-      .select('id, category, title')
-      .eq('user_id', userId)
-      .gte('task_date', startDate)
-      .lte('task_date', endDate);
-    if (categories) taskQuery = taskQuery.in('category', categories);
-    const { data: tasks, error: tasksError } = await taskQuery;
-    if (tasksError) throw tasksError;
-    if (!tasks || tasks.length === 0) return [];
-
-    const taskById = new Map(tasks.map(t => [t.id, t]));
-    const { data: logs, error: logsError } = await supabase
-      .from('task_logs')
-      .select('task_id, log_date, completed')
-      .eq('user_id', userId)
-      .in('task_id', tasks.map(t => t.id))
-      .gte('log_date', startDate)
-      .lte('log_date', endDate);
-    if (logsError) throw logsError;
-
-    const rows: { log_date: string; completed: boolean; category: DailyTask['category']; title: string }[] = [];
-    for (const log of logs ?? []) {
-      const task = taskById.get(log.task_id);
-      if (!task) continue;
-      rows.push({ log_date: log.log_date, completed: log.completed, category: task.category, title: task.title });
-    }
-    return rows;
-  },
-
   async getLogsInRange(userId: string, startDate: string, endDate: string): Promise<Pick<TaskLog, 'log_date' | 'completed'>[]> {
     const { data, error } = await supabase
       .from('task_logs')

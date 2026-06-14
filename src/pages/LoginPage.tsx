@@ -4,7 +4,6 @@ import { Eye, EyeOff, Dumbbell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { LegalFooter } from '../components/layout/LegalFooter';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -163,10 +162,6 @@ export function LoginPage() {
               Create one free
             </Link>
           </p>
-        </div>
-
-        <div className="mt-6">
-          <LegalFooter />
         </div>
       </div>
     </div>
