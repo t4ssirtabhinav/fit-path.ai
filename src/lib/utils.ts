@@ -19,6 +19,12 @@ export function yesterday(timezone: string = DEFAULT_TIMEZONE): string {
   return new Date(Date.now() - 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: timezone });
 }
 
+export function addDays(dateStr: string, n: number): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('en-CA');
+}
+
 export function getDayName(date: Date | string, timezone: string = DEFAULT_TIMEZONE): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return d.toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone }).toLowerCase() as string;

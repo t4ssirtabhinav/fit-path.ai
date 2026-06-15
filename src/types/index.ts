@@ -90,6 +90,9 @@ export interface Meal {
   title: string;
   items: string[];
   protein_g: number;
+  carbs_g?: number;
+  fats_g?: number;
+  fiber_g?: number;
   calories: number;
   notes?: string;
 }
@@ -145,6 +148,7 @@ export interface GymDetails {
   equipment: string;
   days_per_week: number;
   primary_focus: string[];
+  workout_days?: string[];
 }
 
 export interface YogaDetails {
@@ -159,6 +163,7 @@ export interface CardioDetails {
   activities: string[];
   goal: string;
   days_per_week: number;
+  workout_days?: string[];
 }
 
 export interface HomeDetails {

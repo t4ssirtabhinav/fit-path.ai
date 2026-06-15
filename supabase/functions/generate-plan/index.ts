@@ -73,6 +73,9 @@ const MealSchema = z.object({
   title: z.string(),
   items: z.array(z.string()),
   protein_g: z.coerce.number(),
+  carbs_g: z.coerce.number().optional(),
+  fats_g: z.coerce.number().optional(),
+  fiber_g: z.coerce.number().optional(),
   calories: z.coerce.number(),
   notes: z.string().optional(),
 });
@@ -224,6 +227,7 @@ function buildPrompt(hp: Record<string, unknown>): { prompt: string; requiresMed
   const rawComments = (hp.personalization_comments as string) || "";
   const personalizationComments = sanitizeUserInput(rawComments, 500);
   const commitmentDays = (hp.commitment_days_per_week as number | null) ?? 3;
+  const preferredWorkoutDays = (hp.preferred_workout_days as string[] | null) ?? null;
   const country = (hp.country as string) || "their region";
   const timelineMonths = (hp.goal_timeline_months as number | null) ?? 3;
   const activityLevel = (hp.activity_level as string) || "moderate";
@@ -250,15 +254,18 @@ function buildPrompt(hp: Record<string, unknown>): { prompt: string; requiresMed
     const selectedWorkoutModalityIds = modalities.filter((m) => getPromptInfo(m)?.isWorkoutModality ?? false);
     const selectedWorkoutModalities = selectedWorkoutModalityIds.map((m) => getPromptInfo(m)?.label ?? m);
     const structureGuidance = selectedWorkoutModalityIds.map((m) => WORKOUT_STRUCTURE_GUIDANCE[m]).filter(Boolean).join(" ");
-    sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}) at roughly ${commitmentDays} active sessions/week. If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Mark non-active days as rest days. Every active workout day must list at least 3 concrete, specifically-named exercises/poses/activities — never a single vague placeholder like "Upper Body Workout" as an exercise (that belongs in the workout's "name" field, not its exercise list). For every exercise, "intensity_guidance" must give concrete, actionable guidance calibrated to this person's stated experience/fitness level, and "progression_notes" must describe how to advance that exercise across this plan's duration. ${structureGuidance}`);
+    const restDayInstruction = preferredWorkoutDays && preferredWorkoutDays.length > 0
+      ? `The user has chosen to train on exactly these days: ${preferredWorkoutDays.join(", ")}. Mark exactly these days "is_rest_day": false (with a workout) and all other days "is_rest_day": true — do not deviate from this set, and do not add extra rest days beyond it.`
+      : `Place exactly ${commitmentDays} active days and ${7 - commitmentDays} rest days — no more, no fewer — distributing the rest days sensibly across the week for recovery given the selected modalities.`;
+    sections.push(`WORKOUTS: Build a 7-day weekly_schedule reflecting the user's selected activities (${selectedWorkoutModalities.join(", ")}). ${restDayInstruction} If more than one modality is selected, interleave them across the week rather than treating them as interchangeable — e.g. alternate strength days with yoga/cardio days as appropriate. Every active workout day must list at least 3 concrete, specifically-named exercises/poses/activities — never a single vague placeholder like "Upper Body Workout" as an exercise (that belongs in the workout's "name" field, not its exercise list). For every exercise, "intensity_guidance" must give concrete, actionable guidance calibrated to this person's stated experience/fitness level, and "progression_notes" must describe how to advance that exercise across this plan's duration. ${structureGuidance}`);
     schemaFields.push(`"weekly_schedule": { "monday": { "is_rest_day": false, "workout": { "name": "string", "duration_minutes": number, "exercises": [{ "name": "string", "sets": number, "reps": "string", "rest_seconds": number, "intensity_guidance": "string", "progression_notes": "string", "exercise_type": "reps_weight"|"duration" }, ... at least 3 exercises ...] } }, "tuesday": { "is_rest_day": true }, ... all 7 lowercase day names ... }`);
   } else {
     addOnAreas.push("structured workouts");
   }
 
   if (hasDiet) {
-    sections.push(`MEALS: Provide a full day of meals (breakfast, mid-morning snack, lunch, evening snack, dinner, optional pre-sleep). ${buildNutritionRules(country, dietType, foodPrefs, foodDislikes, allergies)}`);
-    schemaFields.push(`"daily_meals": { "breakfast": {...}, "mid_morning_snack": {...}, "lunch": {...}, "evening_snack": {...}, "dinner": {...}, "pre_sleep": {...optional...} } — each meal: { "title": "string", "items": ["string"], "protein_g": number, "calories": number }`);
+    sections.push(`MEALS: Provide a full day of meals (breakfast, mid-morning snack, lunch, evening snack, dinner, optional pre-sleep). For each meal, also estimate carbs_g, fats_g and fiber_g — these together with protein_g should roughly account for the meal's calories (protein 4 kcal/g, carbs 4 kcal/g, fat 9 kcal/g). ${buildNutritionRules(country, dietType, foodPrefs, foodDislikes, allergies)}`);
+    schemaFields.push(`"daily_meals": { "breakfast": {...}, "mid_morning_snack": {...}, "lunch": {...}, "evening_snack": {...}, "dinner": {...}, "pre_sleep": {...optional...} } — each meal: { "title": "string", "items": ["string"], "protein_g": number, "carbs_g": number, "fats_g": number, "fiber_g": number, "calories": number }`);
   } else {
     addOnAreas.push("a structured meal plan");
   }
@@ -430,11 +437,13 @@ Deno.serve(async (req: Request) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            // 8192 keeps us within budget for an elaborate structured plan; native JSON mode
-            // removes the need for markdown-fence stripping and reduces malformed output.
-            generationConfig: { temperature: 0.7, maxOutputTokens: 8192, responseMimeType: "application/json", thinkingConfig: { thinkingLevel: "low" } },
+            // 16384 covers thinking + a fully elaborate plan for max-complexity profiles
+            // (7-8 modalities + holistic/medical guardrails) — on Gemini 3, thinking tokens
+            // (even at "low") are drawn from the same maxOutputTokens budget as the final
+            // JSON. Native JSON mode removes the need for markdown-fence stripping.
+            generationConfig: { temperature: 0.7, maxOutputTokens: 16384, responseMimeType: "application/json", thinkingConfig: { thinkingLevel: "low" } },
           }),
-          signal: AbortSignal.timeout(50000),
+          signal: AbortSignal.timeout(110000),
         }
       );
       const geminiData = await geminiRes.json();
@@ -484,7 +493,7 @@ Deno.serve(async (req: Request) => {
         parsed = JSON.parse(jsonMatch[0]);
       } catch (parseErr) {
         console.error("Failed to parse Gemini JSON:", parseErr, "raw (truncated):", jsonMatch[0].slice(-300));
-        if (finishReason === "MAX_TOKENS" || jsonMatch[0].length >= 7000) {
+        if (finishReason === "MAX_TOKENS" || jsonMatch[0].length >= 14000) {
           throw new Error("Your plan was too elaborate for the AI to complete. Please try again — selecting fewer focus areas can help.");
         }
         throw new Error("AI returned malformed JSON. Please try again.");

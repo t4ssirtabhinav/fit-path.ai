@@ -132,11 +132,19 @@ function derivedFitnessGoals(modalities: GoalModality[], gd: GoalDetails): strin
 }
 
 function derivedCommitmentDays(modalities: GoalModality[], gd: GoalDetails): number {
+  if (modalities.includes('gym') && gd.gym?.workout_days?.length)     return gd.gym.workout_days.length;
+  if (modalities.includes('cardio') && gd.cardio?.workout_days?.length) return gd.cardio.workout_days.length;
   if (modalities.includes('gym') && gd.gym?.days_per_week)     return gd.gym.days_per_week;
   if (modalities.includes('cardio') && gd.cardio?.days_per_week) return gd.cardio.days_per_week;
   if (modalities.includes('home'))  return 3;
   if (modalities.includes('yoga'))  return 3;
   return 3;
+}
+
+function derivedWorkoutDays(modalities: GoalModality[], gd: GoalDetails): string[] | null {
+  if (modalities.includes('gym') && gd.gym?.workout_days?.length) return gd.gym.workout_days;
+  if (modalities.includes('cardio') && gd.cardio?.workout_days?.length) return gd.cardio.workout_days;
+  return null;
 }
 
 function sanitizeComment(c: string): string | null {
@@ -855,6 +863,7 @@ export function OnboardingPage() {
         food_dislikes: gd.diet?.food_dislikes ?? [],
         sleep_hours_current: d.sleep_hours_current,
         commitment_days_per_week: d.onboarding_path === 'track' ? null : derivedCommitmentDays(modalities, gd),
+        preferred_workout_days: d.onboarding_path === 'track' ? null : derivedWorkoutDays(modalities, gd),
         preferred_workout_time: d.preferred_workout_time || null,
         goal_timeline_months: d.goal_timeline_months || null,
         personalization_comments: sanitizeComment(d.personalization_comments),
