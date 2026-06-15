@@ -437,11 +437,13 @@ Deno.serve(async (req: Request) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            // 8192 keeps us within budget for an elaborate structured plan; native JSON mode
-            // removes the need for markdown-fence stripping and reduces malformed output.
-            generationConfig: { temperature: 0.7, maxOutputTokens: 8192, responseMimeType: "application/json", thinkingConfig: { thinkingLevel: "low" } },
+            // 16384 covers thinking + a fully elaborate plan for max-complexity profiles
+            // (7-8 modalities + holistic/medical guardrails) — on Gemini 3, thinking tokens
+            // (even at "low") are drawn from the same maxOutputTokens budget as the final
+            // JSON. Native JSON mode removes the need for markdown-fence stripping.
+            generationConfig: { temperature: 0.7, maxOutputTokens: 16384, responseMimeType: "application/json", thinkingConfig: { thinkingLevel: "low" } },
           }),
-          signal: AbortSignal.timeout(50000),
+          signal: AbortSignal.timeout(110000),
         }
       );
       const geminiData = await geminiRes.json();
@@ -491,7 +493,7 @@ Deno.serve(async (req: Request) => {
         parsed = JSON.parse(jsonMatch[0]);
       } catch (parseErr) {
         console.error("Failed to parse Gemini JSON:", parseErr, "raw (truncated):", jsonMatch[0].slice(-300));
-        if (finishReason === "MAX_TOKENS" || jsonMatch[0].length >= 7000) {
+        if (finishReason === "MAX_TOKENS" || jsonMatch[0].length >= 14000) {
           throw new Error("Your plan was too elaborate for the AI to complete. Please try again — selecting fewer focus areas can help.");
         }
         throw new Error("AI returned malformed JSON. Please try again.");

@@ -56,7 +56,7 @@ export function GeneratePlanPage() {
               'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
             },
             body: JSON.stringify({}),
-            signal: AbortSignal.timeout(75000),
+            signal: AbortSignal.timeout(120000),
           }
         );
       } catch (err) {
@@ -106,7 +106,7 @@ export function GeneratePlanPage() {
             <p className="text-gray-400 text-sm mb-8">
               {done
                 ? 'A personalised Phase 1 plan has been created just for you.'
-                : 'This usually takes 30–60 seconds. Hang tight.'}
+                : 'This usually takes 30–60 seconds, and can take up to 2 minutes for more detailed plans. Hang tight.'}
             </p>
 
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8 text-left space-y-3">
