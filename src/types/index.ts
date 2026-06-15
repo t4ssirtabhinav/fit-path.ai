@@ -90,6 +90,9 @@ export interface Meal {
   title: string;
   items: string[];
   protein_g: number;
+  carbs_g?: number;
+  fats_g?: number;
+  fiber_g?: number;
   calories: number;
   notes?: string;
 }

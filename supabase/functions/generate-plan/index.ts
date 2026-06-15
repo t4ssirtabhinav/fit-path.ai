@@ -73,6 +73,9 @@ const MealSchema = z.object({
   title: z.string(),
   items: z.array(z.string()),
   protein_g: z.coerce.number(),
+  carbs_g: z.coerce.number().optional(),
+  fats_g: z.coerce.number().optional(),
+  fiber_g: z.coerce.number().optional(),
   calories: z.coerce.number(),
   notes: z.string().optional(),
 });
@@ -257,8 +260,8 @@ function buildPrompt(hp: Record<string, unknown>): { prompt: string; requiresMed
   }
 
   if (hasDiet) {
-    sections.push(`MEALS: Provide a full day of meals (breakfast, mid-morning snack, lunch, evening snack, dinner, optional pre-sleep). ${buildNutritionRules(country, dietType, foodPrefs, foodDislikes, allergies)}`);
-    schemaFields.push(`"daily_meals": { "breakfast": {...}, "mid_morning_snack": {...}, "lunch": {...}, "evening_snack": {...}, "dinner": {...}, "pre_sleep": {...optional...} } — each meal: { "title": "string", "items": ["string"], "protein_g": number, "calories": number }`);
+    sections.push(`MEALS: Provide a full day of meals (breakfast, mid-morning snack, lunch, evening snack, dinner, optional pre-sleep). For each meal, also estimate carbs_g, fats_g and fiber_g — these together with protein_g should roughly account for the meal's calories (protein 4 kcal/g, carbs 4 kcal/g, fat 9 kcal/g). ${buildNutritionRules(country, dietType, foodPrefs, foodDislikes, allergies)}`);
+    schemaFields.push(`"daily_meals": { "breakfast": {...}, "mid_morning_snack": {...}, "lunch": {...}, "evening_snack": {...}, "dinner": {...}, "pre_sleep": {...optional...} } — each meal: { "title": "string", "items": ["string"], "protein_g": number, "carbs_g": number, "fats_g": number, "fiber_g": number, "calories": number }`);
   } else {
     addOnAreas.push("a structured meal plan");
   }

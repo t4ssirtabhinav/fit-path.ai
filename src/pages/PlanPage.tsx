@@ -1,20 +1,26 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Dumbbell, Salad, Pill, Zap, Moon, ChevronDown, ChevronUp, RefreshCw, AlertCircle, Clock, Target, Sparkles } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Dumbbell, Salad, Pill, Zap, Moon, ChevronDown, ChevronUp, RefreshCw, AlertCircle, Clock, Target, Sparkles, BedDouble } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import type { WorkoutSession, Supplement, Meal } from '../types';
 import { usePlan } from '../hooks/usePlan';
+import { today, addDays, getDayName, DEFAULT_TIMEZONE } from '../lib/utils';
 
 export function PlanPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const tz = profile?.timezone || DEFAULT_TIMEZONE;
   const { planData, planDataInvalid, planMeta, loading, regenerate: regeneratePlan } = usePlan(user?.id);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['workout', 'meal']));
   const [regenLoading, setRegenLoading] = useState(false);
   const [regenError, setRegenError] = useState('');
   const [regenCooldownDays, setRegenCooldownDays] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState(
+    () => (location.state as { date?: string } | null)?.date ?? today(tz)
+  );
 
   useEffect(() => {
     if (!planMeta) return;
@@ -73,8 +79,11 @@ export function PlanPage() {
     </div>
   );
 
-  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  const dayLabels: Record<string, string> = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun' };
+  const todayDate = today(tz);
+  const dateOptions = Array.from({ length: 7 }, (_, i) => addDays(todayDate, i));
+  const selectedDayName = getDayName(`${selectedDate}T00:00:00`, tz);
+  const selectedSchedule = planData.weekly_schedule?.[selectedDayName as keyof typeof planData.weekly_schedule];
+  const selectedWorkout = selectedSchedule?.workout as WorkoutSession | undefined;
 
   return (
     <div className="max-w-2xl mx-auto space-y-5 pb-24 lg:pb-8">
@@ -103,6 +112,34 @@ export function PlanPage() {
         </div>
       </div>
 
+      {/* Date selector */}
+      {planData.weekly_schedule && (
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+          {dateOptions.map(date => {
+            const dayName = getDayName(`${date}T00:00:00`, tz);
+            const sched = planData.weekly_schedule?.[dayName as keyof typeof planData.weekly_schedule];
+            const isRest = sched?.is_rest_day;
+            const isSelected = date === selectedDate;
+            const d = new Date(`${date}T00:00:00`);
+            return (
+              <button
+                key={date}
+                onClick={() => setSelectedDate(date)}
+                className={`flex-1 min-w-[3.25rem] text-center py-2 rounded-xl border transition-colors ${
+                  isSelected
+                    ? 'bg-emerald-500/20 border-emerald-500/40'
+                    : isRest ? 'bg-gray-800/50 border-gray-800' : 'bg-gray-800/50 border-emerald-500/20'
+                }`}
+              >
+                <p className={`text-xs ${isSelected ? 'text-emerald-300' : 'text-gray-500'}`}>{d.toLocaleDateString('en-US', { weekday: 'short', timeZone: tz })}</p>
+                <p className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-gray-300'}`}>{d.toLocaleDateString('en-US', { day: 'numeric', timeZone: tz })}</p>
+                <p className="text-[10px] mt-0.5 text-gray-500">{isRest ? 'Rest' : 'Workout'}</p>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Personalized notes */}
       {planData.personalized_notes && (
         <Card>
@@ -129,55 +166,43 @@ export function PlanPage() {
         </CardHeader>
         {expandedSections.has('workout') && (
           <CardContent className="pt-0">
-            <div className="grid grid-cols-7 gap-1 mb-4">
-              {days.map(day => {
-                const sched = planData.weekly_schedule?.[day as keyof typeof planData.weekly_schedule];
-                const isRest = sched?.is_rest_day;
-                return (
-                  <div key={day} className={`text-center py-2 rounded-xl ${isRest ? 'bg-gray-800/50' : 'bg-emerald-500/10 border border-emerald-500/20'}`}>
-                    <p className="text-xs text-gray-500">{dayLabels[day]}</p>
-                    <p className="text-xs mt-1">{isRest ? 'Rest' : 'Workout'}</p>
+            {selectedWorkout ? (
+              <div className="bg-gray-800/50 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs text-gray-500 capitalize">{selectedDayName}</p>
+                    <p className="text-sm font-semibold text-white">{selectedWorkout.name}</p>
                   </div>
-                );
-              })}
-            </div>
-            <div className="space-y-3">
-              {days.filter(day => {
-                const sched = planData.weekly_schedule?.[day as keyof typeof planData.weekly_schedule];
-                return sched && !sched.is_rest_day && sched.workout;
-              }).map(day => {
-                const sched = planData.weekly_schedule?.[day as keyof typeof planData.weekly_schedule];
-                const workout = sched?.workout as WorkoutSession;
-                if (!workout) return null;
-                return (
-                  <div key={day} className="bg-gray-800/50 rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <p className="text-xs text-gray-500 capitalize">{day}</p>
-                        <p className="text-sm font-semibold text-white">{workout.name}</p>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-500">
-                        <Clock className="w-3.5 h-3.5" />
-                        {workout.duration_minutes} min
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      {(workout.exercises ?? []).map((ex, i) => (
-                        <div key={i}>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-gray-300">{ex.name}</span>
-                            <span className="text-gray-500">{ex.sets}x{ex.reps}</span>
-                          </div>
-                          {ex.intensity_guidance && <p className="text-xs text-gray-500 mt-0.5">{ex.intensity_guidance}</p>}
-                          {ex.progression_notes && <p className="text-xs text-emerald-400/70 mt-0.5 italic">{ex.progression_notes}</p>}
-                        </div>
-                      ))}
-                    </div>
-                    {workout.notes && <p className="text-xs text-emerald-400/70 mt-2 italic">{workout.notes}</p>}
+                  <div className="flex items-center gap-1 text-xs text-gray-500">
+                    <Clock className="w-3.5 h-3.5" />
+                    {selectedWorkout.duration_minutes} min
                   </div>
-                );
-              })}
-            </div>
+                </div>
+                <div className="space-y-2">
+                  {(selectedWorkout.exercises ?? []).map((ex, i) => (
+                    <div key={i}>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-300">{ex.name}</span>
+                        <span className="text-gray-500">{ex.sets}x{ex.reps}</span>
+                      </div>
+                      {ex.intensity_guidance && <p className="text-xs text-gray-500 mt-0.5">{ex.intensity_guidance}</p>}
+                      {ex.progression_notes && <p className="text-xs text-emerald-400/70 mt-0.5 italic">{ex.progression_notes}</p>}
+                    </div>
+                  ))}
+                </div>
+                {selectedWorkout.notes && <p className="text-xs text-emerald-400/70 mt-2 italic">{selectedWorkout.notes}</p>}
+              </div>
+            ) : (
+              <div className="bg-gray-800/50 rounded-xl p-4 flex items-center gap-3">
+                <span className="w-9 h-9 rounded-full bg-violet-400/10 flex items-center justify-center flex-shrink-0">
+                  <BedDouble className="w-4 h-4 text-violet-400" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-white capitalize">{selectedDayName} — Rest day</p>
+                  <p className="text-xs text-gray-500">No workout scheduled. Use this day to recover.</p>
+                </div>
+              </div>
+            )}
           </CardContent>
         )}
       </Card>
@@ -203,18 +228,21 @@ export function PlanPage() {
               <div key={key} className="bg-gray-800/50 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-white capitalize">{key.replace(/_/g, ' ')}</p>
-                  <div className="flex items-center gap-3 text-xs text-gray-500">
-                    <span className="flex items-center gap-1"><Target className="w-3 h-3" />{meal.protein_g}g protein</span>
-                    <span>{meal.calories} kcal</span>
-                  </div>
+                  <span className="text-xs text-gray-500">{meal.calories} kcal</span>
                 </div>
-                <ul className="space-y-0.5">
+                <ul className="space-y-0.5 mb-2">
                   {(meal.items ?? []).map((item, i) => (
                     <li key={i} className="text-xs text-gray-400 flex items-start gap-1.5">
                       <span className="text-emerald-500 mt-0.5">&#8226;</span>{item}
                     </li>
                   ))}
                 </ul>
+                <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                  <span className="flex items-center gap-1"><Target className="w-3 h-3" />{meal.protein_g}g protein</span>
+                  {meal.carbs_g != null && <span>{meal.carbs_g}g carbs</span>}
+                  {meal.fats_g != null && <span>{meal.fats_g}g fat</span>}
+                  {meal.fiber_g != null && <span>{meal.fiber_g}g fiber</span>}
+                </div>
                 {meal.notes && <p className="text-xs text-amber-400/70 mt-1.5 italic">{meal.notes}</p>}
               </div>
             ))}
