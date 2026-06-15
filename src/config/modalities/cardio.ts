@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { CardioDetails } from '../../types';
 import type { ModalityDefinition } from './types';
-import { MODALITY_PROMPT_INFO } from './shared';
+import { MODALITY_PROMPT_INFO, WEEKDAY_OPTIONS } from './shared';
 
 export const cardioModality: ModalityDefinition<CardioDetails> = {
   ...MODALITY_PROMPT_INFO.cardio,
@@ -16,6 +16,7 @@ export const cardioModality: ModalityDefinition<CardioDetails> = {
     activities: z.array(z.string()),
     goal: z.enum(['lose_fat', 'endurance', 'heart_health', 'stress', 'event', 'complement']),
     days_per_week: z.number().int(),
+    workout_days: z.array(z.string()).optional(),
   }),
   uiFields: [
     {
@@ -77,7 +78,18 @@ export const cardioModality: ModalityDefinition<CardioDetails> = {
         { value: '3', label: '3 days' },
         { value: '4', label: '4 days' },
         { value: '5', label: '5 days' },
+        { value: '6', label: '6 days' },
+        { value: '7', label: '7 days' },
       ],
+    },
+    {
+      key: 'workout_days',
+      kind: 'multiselect',
+      label: 'Prefer specific days instead?',
+      labelNote: '— optional',
+      optional: true,
+      options: WEEKDAY_OPTIONS,
+      helperText: 'Pick the exact days you want to be active. This overrides the day count above — the rest of the week will be set as rest days.',
     },
   ],
 };

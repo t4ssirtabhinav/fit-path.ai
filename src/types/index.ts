@@ -148,6 +148,7 @@ export interface GymDetails {
   equipment: string;
   days_per_week: number;
   primary_focus: string[];
+  workout_days?: string[];
 }
 
 export interface YogaDetails {
@@ -162,6 +163,7 @@ export interface CardioDetails {
   activities: string[];
   goal: string;
   days_per_week: number;
+  workout_days?: string[];
 }
 
 export interface HomeDetails {

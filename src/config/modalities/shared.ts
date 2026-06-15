@@ -4,6 +4,18 @@
 
 export type GoalModality = 'gym' | 'yoga' | 'cardio' | 'home' | 'physio' | 'diet' | 'supplements' | 'concerns';
 
+export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
+
+export const WEEKDAY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'monday', label: 'Mon' },
+  { value: 'tuesday', label: 'Tue' },
+  { value: 'wednesday', label: 'Wed' },
+  { value: 'thursday', label: 'Thu' },
+  { value: 'friday', label: 'Fri' },
+  { value: 'saturday', label: 'Sat' },
+  { value: 'sunday', label: 'Sun' },
+];
+
 export interface PromptModalityInfo {
   id: GoalModality;
   /** Short label used when describing the user's overall activity mix to the LLM. */

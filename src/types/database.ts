@@ -69,6 +69,7 @@ export interface Database {
           sleep_hours_current: number | null;
           commitment_days_per_week: number | null;
           preferred_workout_time: string | null;
+          preferred_workout_days: string[] | null;
           food_preferences: string[];
           food_dislikes: string[];
           goal_timeline_months: number | null;
@@ -99,6 +100,7 @@ export interface Database {
           sleep_hours_current?: number | null;
           commitment_days_per_week?: number | null;
           preferred_workout_time?: string | null;
+          preferred_workout_days?: string[] | null;
           food_preferences?: string[];
           food_dislikes?: string[];
           goal_timeline_months?: number | null;

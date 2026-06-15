@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { GymDetails } from '../../types';
 import type { ModalityDefinition } from './types';
-import { MODALITY_PROMPT_INFO } from './shared';
+import { MODALITY_PROMPT_INFO, WEEKDAY_OPTIONS } from './shared';
 
 const LOW_EXPERIENCE = ['never', 'beginner'];
 
@@ -16,8 +16,9 @@ export const gymModality: ModalityDefinition<GymDetails> = {
   schema: z.object({
     experience: z.enum(['never', 'beginner', 'intermediate', 'advanced', 'experienced']),
     equipment: z.enum(['full_gym', 'home_gym', 'minimal', 'bodyweight']),
-    days_per_week: z.number().int().min(2).max(6),
+    days_per_week: z.number().int().min(2).max(7),
     primary_focus: z.array(z.string()).min(1).max(3),
+    workout_days: z.array(z.string()).optional(),
   }),
   uiFields: [
     {
@@ -54,13 +55,22 @@ export const gymModality: ModalityDefinition<GymDetails> = {
       required: true,
       requiredMessage: 'Please select how many days per week you can train.',
       valueType: 'number',
-      cols: ctx => (LOW_EXPERIENCE.includes(ctx.goalDetails.gym?.experience ?? '') ? 4 : 6),
+      cols: ctx => (LOW_EXPERIENCE.includes(ctx.goalDetails.gym?.experience ?? '') ? 4 : 7),
       options: ctx => (LOW_EXPERIENCE.includes(ctx.goalDetails.gym?.experience ?? '')
         ? [2, 3, 4, 5].map(n => ({ value: String(n), label: `${n} days` }))
-        : [2, 3, 4, 5, 6].map(n => ({ value: String(n), label: String(n) }))),
+        : [2, 3, 4, 5, 6, 7].map(n => ({ value: String(n), label: String(n) }))),
       helperText: ctx => (LOW_EXPERIENCE.includes(ctx.goalDetails.gym?.experience ?? '')
         ? 'We recommend easing in with fewer sessions initially.'
         : undefined),
+    },
+    {
+      key: 'workout_days',
+      kind: 'multiselect',
+      label: 'Prefer specific days instead?',
+      labelNote: '— optional',
+      optional: true,
+      options: WEEKDAY_OPTIONS,
+      helperText: 'Pick the exact days you want to train. This overrides the day count above — the rest of the week will be set as rest days.',
     },
     {
       key: 'primary_focus',
