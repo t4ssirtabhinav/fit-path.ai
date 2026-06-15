@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Users, Copy, Check, UserPlus, Flame, X, Award, Dumbbell, Zap, Moon, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { DEFAULT_TIMEZONE } from '../lib/utils';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { StreakRepository } from '../repositories/StreakRepository';
@@ -13,11 +14,13 @@ import type { BuddyDetail, DailyTask, TaskLog } from '../types';
 
 export function BuddyPage() {
   const { user, profile } = useAuth();
+  const { showToast } = useToast();
   const [searchParams] = useSearchParams();
   const selectedBuddyId = searchParams.get('buddyId');
 
   const [buddies, setBuddies] = useState<BuddyDetail[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<{ id: string; name: string; requesterId: string }[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<{ id: string; name: string; requesterId: string; avatarUrl: string | null; country: string | null }[]>([]);
+  const [pendingExpanded, setPendingExpanded] = useState(true);
   const [myStreak, setMyStreak] = useState({ current: 0, longest: 0, totalActive: 0, missedDays: 0, monthlyRate: 0 });
   const [copied, setCopied] = useState(false);
   const [inviteInput, setInviteInput] = useState('');
@@ -75,7 +78,13 @@ export function BuddyPage() {
     for (const rel of buddyRels) {
       if (rel.status === 'pending' && rel.recipient_id === user.id) {
         const requesterProfile = await ProfileRepository.getForUser(rel.requester_id);
-        pending.push({ id: rel.id, name: requesterProfile?.display_name ?? 'Someone', requesterId: rel.requester_id });
+        pending.push({
+          id: rel.id,
+          name: requesterProfile?.display_name ?? 'Someone',
+          requesterId: rel.requester_id,
+          avatarUrl: requesterProfile?.avatar_url ?? null,
+          country: requesterProfile?.country ?? null,
+        });
       } else if (rel.status === 'active') {
         const buddyId = rel.requester_id === user.id ? rel.recipient_id : rel.requester_id;
         activeBuddyIds.push(buddyId);
@@ -155,6 +164,7 @@ export function BuddyPage() {
     } else {
       setInviteInput('');
       await loadData();
+      showToast('Buddy request sent!');
     }
     setConnectLoading(false);
   }
@@ -163,11 +173,13 @@ export function BuddyPage() {
     await BuddyRepository.updateStatus(req.id, 'active');
     setPendingRequests(prev => prev.filter(p => p.id !== req.id));
     await loadData();
+    showToast('Buddy request accepted');
   }
 
   async function declineRequest(req: typeof pendingRequests[0]) {
     await BuddyRepository.updateStatus(req.id, 'declined');
     setPendingRequests(prev => prev.filter(p => p.id !== req.id));
+    showToast('Request declined');
   }
 
   async function removeBuddy(buddy: BuddyDetail) {
@@ -176,6 +188,7 @@ export function BuddyPage() {
     setBuddies(prev => prev.filter(b => b.id !== buddy.id));
     setExpandedBuddyId(null);
     setConfirmRemoveId(null);
+    showToast('Buddy removed');
   }
 
   const myScore = myStreak.current * 10 + myStreak.totalActive;
@@ -198,20 +211,37 @@ export function BuddyPage() {
       {/* Pending requests */}
       {pendingRequests.length > 0 && (
         <Card className="border-emerald-500/30">
-          <CardContent className="py-4 space-y-3">
-            {pendingRequests.map(req => (
-              <div key={req.id} className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white">{req.name} wants to be your buddy!</p>
-                  <p className="text-xs text-gray-500">Accept to see each other's streaks and compete.</p>
+          <CardHeader>
+            <button className="w-full flex items-center justify-between" onClick={() => setPendingExpanded(prev => !prev)}>
+              <h2 className="text-sm font-semibold text-white">Pending requests ({pendingRequests.length})</h2>
+              {pendingExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+            </button>
+          </CardHeader>
+          {pendingExpanded && (
+            <CardContent className="pt-0 space-y-3">
+              {pendingRequests.map(req => (
+                <div key={req.id} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {req.avatarUrl ? (
+                      <img src={req.avatarUrl} alt={req.name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-lg font-bold text-blue-400">{req.name[0]?.toUpperCase()}</span>
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{req.name} wants to be your buddy!</p>
+                      <p className="text-xs text-gray-500">{req.country ? `${req.country} · ` : ''}Accept to see each other's streaks and compete.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <Button size="sm" onClick={() => acceptRequest(req)}>Accept</Button>
+                    <Button size="sm" variant="secondary" onClick={() => declineRequest(req)}>Decline</Button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => acceptRequest(req)}>Accept</Button>
-                  <Button size="sm" variant="secondary" onClick={() => declineRequest(req)}>Decline</Button>
-                </div>
-              </div>
-            ))}
-          </CardContent>
+              ))}
+            </CardContent>
+          )}
         </Card>
       )}
 

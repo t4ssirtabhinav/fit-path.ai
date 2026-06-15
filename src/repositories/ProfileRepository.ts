@@ -15,8 +15,8 @@ export const ProfileRepository = {
     return data;
   },
 
-  async getByIds(userIds: string[]): Promise<Pick<Profile, 'id' | 'display_name'>[]> {
-    const { data, error } = await supabase.from('profiles').select('id, display_name').in('id', userIds);
+  async getByIds(userIds: string[]): Promise<Pick<Profile, 'id' | 'display_name' | 'avatar_url'>[]> {
+    const { data, error } = await supabase.from('profiles').select('id, display_name, avatar_url').in('id', userIds);
     if (error) throw error;
     return data ?? [];
   },
