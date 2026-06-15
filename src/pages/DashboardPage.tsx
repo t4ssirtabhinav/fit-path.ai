@@ -4,9 +4,10 @@ import { format } from 'date-fns';
 import {
   Flame, Dumbbell, Salad, Pill, CheckCircle2, Circle, Coffee,
   Moon, Zap, ChevronRight, ChevronDown, ChevronUp, RefreshCw, BedDouble, Target, TrendingUp,
-  Info, X, MessageSquare, Plus, Minus
+  Info, X, MessageSquare, Plus, Minus, CalendarDays
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { PlanRepository } from '../repositories/PlanRepository';
 import { DailyTaskRepository } from '../repositories/DailyTaskRepository';
 import { StreakRepository } from '../repositories/StreakRepository';
@@ -18,7 +19,7 @@ import { BuddyRepository } from '../repositories/BuddyRepository';
 import { ProfileRepository } from '../repositories/ProfileRepository';
 import { StreakService } from '../services/StreakService';
 import { DashboardService } from '../services/DashboardService';
-import { today, DEFAULT_TIMEZONE, getTodaysExercises, parseLeadingInt, getExerciseType, getTaskInputType } from '../lib/utils';
+import { today, addDays, DEFAULT_TIMEZONE, getTodaysExercises, parseLeadingInt, getExerciseType, getTaskInputType } from '../lib/utils';
 import { usePlan } from '../hooks/usePlan';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
@@ -72,6 +73,7 @@ export function DashboardPage() {
   const { user, profile } = useAuth();
   const tz = profile?.timezone || DEFAULT_TIMEZONE;
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [tasks, setTasks] = useState<TaskWithLog[]>([]);
   const [streak, setStreak] = useState<Streak | null>(null);
   const [buddies, setBuddies] = useState<BuddyTile[]>([]);
@@ -322,6 +324,7 @@ export function DashboardPage() {
     const updated = await StreakService.recordCompletion(user.id, nowCompleted, todayDate, tz);
     if (updated) setStreak(updated);
     setTogglingId(null);
+    if (nowCompleted) showToast('Marked complete');
   }
 
   async function saveTaskLog(task: TaskWithLog, fields: { value_logged?: number | null; notes?: string | null }) {
@@ -382,8 +385,12 @@ export function DashboardPage() {
       } catch (error) {
         console.error('Failed to log rest day:', error);
         setRestDayLogging(false);
+        showToast('Could not log rest day. Please try again.', 'error');
         return;
       }
+      showToast('Rest day logged for today');
+    } else {
+      showToast('All tasks already completed today', 'info');
     }
     await fetchData();
     setRestDayLogging(false);
@@ -402,6 +409,7 @@ export function DashboardPage() {
     setShowMeasurementModal(false);
     setWeight('');
     setWaist('');
+    showToast('Measurement saved');
   }
 
   async function saveDailyLog() {
@@ -421,6 +429,7 @@ export function DashboardPage() {
     });
     setSavingLog(false);
     setShowLogModal(false);
+    showToast('Daily log saved');
   }
 
   const groupedTasks = tasks.reduce<Record<string, TaskWithLog[]>>((acc, t) => {
@@ -816,6 +825,17 @@ export function DashboardPage() {
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
+      )}
+
+      {/* Tomorrow preview */}
+      {tasks.length > 0 && (
+        <button
+          onClick={() => navigate('/plan', { state: { date: addDays(todayDate, 1) } })}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-700 text-gray-400 hover:text-white hover:border-gray-600 text-sm transition-colors"
+        >
+          <CalendarDays className="w-4 h-4" />
+          What's tomorrow?
+        </button>
       )}
 
       {/* Info popup modal */}
